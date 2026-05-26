@@ -40,22 +40,57 @@ import java.util.TimeZone
 import kotlin.math.abs
 
 /**
- * Process-wide owner of the Linphone `Core`. Both React and the background
- * services talk to this object — keeping the core in a single static instance
- * means an incoming push can wake the engine before React mounts.
+ * Process-wide owner of the Linphone `Core`.
  *
- * No React API is required to call any of these methods; events are only
- * forwarded to JS if [attachReact] has been called.
+ * ──────────────────────────────────────────────────────────────────────────
+ *  Why is this an `object` (singleton)?
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ *  Three subsystems need to talk to the SAME Linphone Core:
+ *
+ *    1. The React Native module ([NativetalkCallSdkModule]) when JS calls
+ *       dial(), answer(), etc.
+ *    2. The foreground [CallService] which owns the call notification.
+ *    3. The [BackgroundService] which keeps the SIP socket warm when the
+ *       app is backgrounded.
+ *
+ *  If any of these spawned its own Core, you'd have two SIP registrations,
+ *  duplicate notifications, and audio routing fights. By centralising the
+ *  Core here (process lifetime), all three subsystems share one engine.
+ *
+ *  This also lets an incoming push wake the engine BEFORE React mounts:
+ *  the push wakes [BackgroundService] → which calls `ensureStarted()` →
+ *  which registers and accepts the call. Once React boots, [attachReact]
+ *  replays any in-flight call state into JS.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ *  React decoupling
+ * ──────────────────────────────────────────────────────────────────────────
+ *  Calling any method here works whether or not React is alive. Events are
+ *  only forwarded to JS if [attachReact] has been called — otherwise [emit]
+ *  is a silent no-op. This is what makes push-driven, RN-not-yet-ready
+ *  flows possible.
  */
 object CoreManager {
     private const val TAG = "NativetalkCallSdk.Core"
 
+    // Two channels because Android shows them differently:
+    //   - INCOMING uses IMPORTANCE_HIGH (heads-up notification + sound)
+    //   - ONGOING uses IMPORTANCE_LOW (silent persistent notification)
+    // Trying to reuse one channel for both gives you either spam (high)
+    // or invisible incoming calls (low).
     const val CHANNEL_INCOMING = "incoming_calls"
     const val CHANNEL_ONGOING = "ongoing_calls"
 
+    // Broadcast intent actions for the Answer / Decline buttons that appear
+    // on the heads-up notification. Caught by [CallActionReceiver].
     const val ACTION_ANSWER_CALL = "io.nativetalk.callsdk.ACTION_ANSWER"
     const val ACTION_DECLINE_CALL = "io.nativetalk.callsdk.ACTION_DECLINE"
 
+    // Stable notification IDs. INCOMING_CALL_ID is fixed at 1 so we can
+    // always find/cancel the ringing notification; per-call notifications
+    // use the call's start timestamp (see [getNotificationIdForCall]) so
+    // multiple concurrent calls don't collide.
     private const val INCOMING_CALL_ID = 1
     private const val INTENT_ANSWER_CALL_NOTIF_CODE = 2
     private const val INTENT_DECLINE_CALL_NOTIF_CODE = 3
@@ -80,6 +115,16 @@ object CoreManager {
     @JvmStatic
     fun core(): Core? = core
 
+    /**
+     * Boot (or no-op if already booted) the Linphone Core.
+     *
+     * Safe to call from multiple subsystems — the [Synchronized] + double
+     * check makes it idempotent. The first caller wins; later callers just
+     * receive a reference to the already-running core.
+     *
+     * After this returns, you can [register], [call], etc. — but events
+     * won't reach JS until [attachReact] is also called.
+     */
     @Synchronized
     fun ensureStarted(ctx: Context) {
         if (::context.isInitialized && core != null) return
@@ -87,13 +132,29 @@ object CoreManager {
         notificationManager = NotificationManagerCompat.from(context)
 
         val f = Factory.instance()
+        // Linphone writes diagnostic logs to disk — useful for debugging
+        // production issues over the phone. They land in the app's
+        // internal storage (not visible to the user).
         f.setLogCollectionPath(context.filesDir.absolutePath)
         f.enableLogCollection(LogCollectionState.Enabled)
 
         core = f.createCore(null, null, context)
+        // KeepAlive sends OPTIONS pings to detect dead TCP/TLS sockets so
+        // we can re-register before the user notices. Without it a NATted
+        // session can silently die after 5+ minutes.
         core?.isKeepAliveEnabled = true
+        // Tell Linphone we have a network. Without this it starts in an
+        // "unreachable" state and won't even attempt registration.
         core?.isNetworkReachable = true
 
+        // The CoreListener is how Linphone tells US about state changes.
+        // Each override does two things:
+        //   1. Update the foreground-service notification (Android UI).
+        //   2. Forward the event to React via [emit] (cross-platform UI).
+        //
+        // Notifications go FIRST so that even if React is dead (e.g. the
+        // app was killed and we're being woken by push), the user still
+        // sees a ringing notification.
         listener = object : CoreListenerStub() {
             override fun onRegistrationStateChanged(
                 c: Core,
@@ -109,18 +170,24 @@ object CoreManager {
             }
 
             override fun onCallStateChanged(c: Core, call: Call, state: Call.State, message: String) {
+                // Always emit the raw state — JS does its own FSM bucketing.
                 emit("CallState", Arguments.createMap().apply {
                     putString("state", state.toString())
                     putString("message", message)
                 })
 
                 when (state) {
+                    // ── Inbound: phone is ringing ─────────────────────────
                     Call.State.IncomingReceived, Call.State.IncomingEarlyMedia -> {
                         val addr = call.remoteAddress
                         val disp = addr?.displayName ?: ""
                         val user = addr?.username ?: ""
                         val uri = addr?.asStringUriOnly() ?: addr?.asString() ?: ""
 
+                        // Show the heads-up notification BEFORE telling JS.
+                        // If the app is in the background the notification
+                        // is the only UI the user can see — without it the
+                        // call would silently miss-fire.
                         showCallNotification(call, true)
 
                         emit("CallIncoming", Arguments.createMap().apply {
@@ -135,28 +202,42 @@ object CoreManager {
                         })
                     }
 
+                    // ── Outbound: we just placed a call ───────────────────
                     Call.State.OutgoingInit -> showCallNotification(call, false)
 
+                    // ── SIP "200 OK" received — call accepted by remote ──
                     Call.State.Connected -> {
                         if (call.dir == Call.Dir.Incoming) {
+                            // Incoming call was answered — tear down the
+                            // ringing foreground notification because the
+                            // in-call UI is now responsible for foreground.
                             stopCallForegroundService()
                         } else {
+                            // Outgoing call connected — upgrade the
+                            // notification from "calling…" to "in call".
                             showCallNotification(call, false)
                         }
                     }
 
+                    // ── Audio actually flowing both ways ──────────────────
                     Call.State.StreamsRunning -> {
+                        // Re-publish the notification with FOREGROUND_SERVICE_TYPE_MICROPHONE
+                        // so Android 14+ allows continued mic access. See
+                        // [startInCallForegroundService] for the type mask logic.
                         val notifiable = getNotifiableForCall(call)
                         if (notifiable.notificationId == currentInCallServiceNotificationId) {
                             startInCallForegroundService(call)
                         }
                     }
 
+                    // ── Terminal: hangup, error, or fully released ───────
                     Call.State.End, Call.State.Released, Call.State.Error -> {
                         stopCallForegroundService()
                         emit("CallEnded", Arguments.createMap())
                     }
 
+                    // Pause, Resume, EarlyMedia, etc. — JS handles the UI;
+                    // no native-side notification change needed.
                     else -> Unit
                 }
             }
@@ -271,6 +352,23 @@ object CoreManager {
         )
     }
 
+    /**
+     * Builds the system call notification.
+     *
+     * Uses [NotificationCompat.CallStyle] (Android 12+) which gives us the
+     * standard pill-shaped Answer / Decline buttons that users recognise
+     * from the native dialer. On older Android versions the system falls
+     * back to a regular notification with action buttons.
+     *
+     * Two important details:
+     *
+     *  - [setFullScreenIntent] makes the notification take over the screen
+     *    when the device is locked (the "ringing on lockscreen" UX). This
+     *    requires the `USE_FULL_SCREEN_INTENT` permission, which the SDK
+     *    declares in its manifest.
+     *  - `setAutoCancel(false) + setOngoing(true)` together prevent the
+     *    user from swiping the notification away while the call is live.
+     */
     @WorkerThread
     private fun createCallNotification(
         call: Call,
@@ -287,6 +385,8 @@ object CoreManager {
             .setImportant(false)
             .build()
 
+        // Incoming style gives BOTH answer and decline actions; ongoing
+        // (active call) gives only end-call.
         val style = if (isIncoming) {
             NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer)
         } else {
@@ -295,16 +395,19 @@ object CoreManager {
 
         val channelId = if (isIncoming) CHANNEL_INCOMING else CHANNEL_ONGOING
         return NotificationCompat.Builder(context, channelId).apply {
-            setColorized(true)
-            setOnlyAlertOnce(true)
+            setColorized(true)        // colour the whole notification, not just the icon
+            setOnlyAlertOnce(true)    // don't re-sound on update
             setStyle(style)
             setSmallIcon(R.drawable.ic_nativetalk_call)
             setCategory(NotificationCompat.CATEGORY_CALL)
             setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            // PRIORITY_MAX on incoming = the heads-up actually appears.
+            // PRIORITY_HIGH on ongoing = persistent but not screaming.
             setPriority(
                 if (isIncoming) NotificationCompat.PRIORITY_MAX
                 else NotificationCompat.PRIORITY_HIGH
             )
+            // Linphone gives startDate in seconds; Android wants ms.
             setWhen(call.callLog.startDate * 1000)
             setAutoCancel(false)
             setOngoing(true)
@@ -404,8 +507,24 @@ object CoreManager {
         waitForInCallServiceForegroundToStopIt = false
     }
 
-    // === Registration & calling ===
+    // ══════════════════════════════════════════════════════════════════════
+    //  Registration & calling
+    // ══════════════════════════════════════════════════════════════════════
 
+    /**
+     * Wipe every proxy config and auth info from the core.
+     *
+     * Linphone is happy to accumulate accounts — call [Core.addAuthInfo]
+     * twice with different passwords and BOTH stick around, with no clear
+     * "winner". When we switch users (or want to recover from a bad
+     * password), we have to scrub the slate first or we'll fail with stale
+     * credentials.
+     *
+     * Each removal is wrapped in [runCatching] because Linphone occasionally
+     * throws when you remove a config it's mid-way through using. Best-effort
+     * is fine here — the goal is "core is in a clean state when this
+     * returns", not "every individual removal succeeded".
+     */
     private fun wipeAllAccounts(c: Core) {
         try {
             val proxies = c.proxyConfigList?.toList() ?: emptyList()
@@ -415,34 +534,55 @@ object CoreManager {
             }
             runCatching { c.defaultProxyConfig = null }
             try { c.clearAllAuthInfo() } catch (_: Throwable) {
+                // Fallback for Linphone builds without clearAllAuthInfo().
                 c.authInfoList?.toList()?.forEach { ai -> runCatching { c.removeAuthInfo(ai) } }
             }
             runCatching { c.refreshRegisters() }
         } catch (_: Throwable) { /* best effort */ }
     }
 
+    /**
+     * Register the given SIP account, replacing any previous one.
+     *
+     * Has a fast path for the "same user re-registering" case: if we
+     * already have a healthy session with this exact username+domain, we
+     * just update the auth (in case the password changed) and refresh.
+     * Skipping the wipe matters because [wipeAllAccounts] briefly puts the
+     * core into an unregistered state — if you're calling this from a
+     * "periodic re-register" loop, you don't want a 200ms outage every time.
+     *
+     * Falls through to a full wipe + setup if the identity changed.
+     */
     fun register(username: String, password: String, domain: String, transport: String?) {
         val c = core ?: return
 
-        // Skip the wipe if the same user is already registered & healthy.
+        // ── Fast path: same user, already healthy ─────────────────────────
         val current = c.defaultProxyConfig
         val currentIdentity = current?.identityAddress
         val healthy = current?.state == org.linphone.core.RegistrationState.Ok
         if (current != null && currentIdentity != null && healthy &&
             currentIdentity.username == username && currentIdentity.domain == domain
         ) {
+            // Password may have changed; the auth info is keyed by username
+            // so adding a fresh one replaces the old.
             val auth = Factory.instance().createAuthInfo(username, null, password, null, null, domain)
             c.addAuthInfo(auth)
             c.refreshRegisters()
             return
         }
 
+        // ── Slow path: new user, or previous session was unhealthy ────────
         try {
             wipeAllAccounts(c)
             val auth = Factory.instance().createAuthInfo(username, null, password, null, null, domain)
             c.addAuthInfo(auth)
 
+            // Identity = "the SIP address other parties dial to reach us"
             val id = Factory.instance().createAddress("sip:$username@$domain") ?: return
+
+            // Server URI tells Linphone where to send REGISTER. The
+            // ";transport=tcp" parameter is required if your PBX only
+            // listens on TCP (most do for security reasons).
             var server = "sip:$domain"
             if (!transport.isNullOrEmpty()) server += ";transport=${transport.lowercase()}"
 
@@ -450,6 +590,9 @@ object CoreManager {
                 identityAddress = id
                 serverAddr = server
                 isRegisterEnabled = true
+                // Re-register every 10 minutes. PBX server controls the
+                // actual TTL via the 200 OK response — this is just our
+                // requested ceiling.
                 expires = 600
             }
             c.addProxyConfig(proxy)
@@ -460,8 +603,16 @@ object CoreManager {
         }
     }
 
+    /**
+     * Re-ping the SIP server to confirm we're still registered.
+     *
+     * If the registration is in the Failed state, toggling
+     * [isRegisterEnabled] kicks Linphone into trying again — sometimes
+     * `refreshRegisters()` alone won't recover from a 401 or socket reset.
+     */
     fun refreshRegisters() {
         val c = core ?: return
+        // Tell Linphone the network is back, in case it gave up.
         c.isNetworkReachable = true
         c.refreshRegisters()
         c.defaultProxyConfig?.let { proxy ->
