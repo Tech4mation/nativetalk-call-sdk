@@ -22,11 +22,16 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
  * Observes the device's native GSM/cellular call state and surfaces the
  * transitions to JS as `TMPhoneCallState` and `TMPhoneCallInfo` events.
  *
- * This is useful for VoIP apps that need to pause or decline SIP calls while
- * a cellular call is active. It is harmless if you don't subscribe.
+ * Why this matters: a VoIP app needs to know when the user is on a regular
+ * phone call so it can decline the SIP call gracefully instead of letting
+ * Linphone fight the cellular audio for the mic.
  *
- * Requires READ_PHONE_STATE if you want telephony updates, and READ_CONTACTS
- * if you want contact lookups. Both are runtime permissions in the host app.
+ * No iOS counterpart — Apple doesn't expose cellular call state to apps;
+ * CallKit handles the coexistence automatically.
+ *
+ * Permission model: requires READ_PHONE_STATE for telephony updates and
+ * READ_CONTACTS for caller-name lookups. Both are host-app responsibility
+ * — if not granted, this monitor silently no-ops.
  */
 object TelephonyMonitor {
     private const val TAG = "NativetalkCallSdk.Telephony"
@@ -35,9 +40,16 @@ object TelephonyMonitor {
     private var rc: ReactApplicationContext? = null
     private var appCtx: Context? = null
 
+    // Two listener fields because Android 12+ deprecated PhoneStateListener
+    // in favour of TelephonyCallback. We use whichever is available at
+    // runtime (see [start]).
     private var cb: TelephonyCallback? = null
     private var oldListener: PhoneStateListener? = null
 
+    // Cached info about the current call. We stash these here because the
+    // direction and number can arrive in separate callbacks (RINGING then
+    // OFFHOOK) — we have to remember the earlier value to emit a complete
+    // event when the later one fires.
     private var currentCallState = TelephonyManager.CALL_STATE_IDLE
     private var pendingCallNumber: String? = null
     private var pendingCallDirection: String? = null
@@ -57,6 +69,8 @@ object TelephonyMonitor {
             appCtx = context.applicationContext
             tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
 
+            // Fail soft: without READ_PHONE_STATE the OS silently delivers
+            // no events, so registering listeners would just waste handles.
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE)
                 != PackageManager.PERMISSION_GRANTED
             ) {
@@ -65,6 +79,10 @@ object TelephonyMonitor {
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // API 31+: TelephonyCallback. Note that the modern API
+                // does NOT pass the phone number to onCallStateChanged
+                // (privacy hardening) — we fill it in from CallScreeningService
+                // when available.
                 val callback = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
                     override fun onCallStateChanged(state: Int) {
                         handleCallStateChange(state, null)
@@ -73,6 +91,8 @@ object TelephonyMonitor {
                 cb = callback
                 tm?.registerTelephonyCallback(context.mainExecutor, callback)
             } else {
+                // Legacy PhoneStateListener (< API 31). Deprecated but still
+                // works and DOES include the phone number directly.
                 @Suppress("DEPRECATION")
                 val listener = object : PhoneStateListener() {
                     override fun onCallStateChanged(state: Int, phoneNumber: String?) {
@@ -121,11 +141,18 @@ object TelephonyMonitor {
 
         when (newState) {
             TelephonyManager.CALL_STATE_OFFHOOK -> {
+                // IDLE → OFFHOOK with no preceding RINGING means we just
+                // placed an outgoing call. RINGING → OFFHOOK would mean we
+                // answered an incoming one, and pendingCallDirection was
+                // already set by the RINGING handler.
                 if (previous == TelephonyManager.CALL_STATE_IDLE) {
                     pendingCallDirection = "outgoing"
                 }
             }
             TelephonyManager.CALL_STATE_IDLE -> {
+                // Clear cached call info AFTER a 2s delay so any late-arriving
+                // CallScreeningService callback (which can lag the state
+                // change by 1–2s on some OEMs) still has access to it.
                 handler.postDelayed({
                     pendingCallNumber = null
                     pendingCallDirection = null
