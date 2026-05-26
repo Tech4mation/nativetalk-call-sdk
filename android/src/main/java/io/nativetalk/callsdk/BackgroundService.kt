@@ -17,6 +17,10 @@ import androidx.core.app.NotificationCompat
  * Long-running foreground service that keeps the SIP registration warm even
  * when the user has backgrounded the app. Hosts a wake lock and (re)starts
  * [CallService] if the OS kills it.
+ *
+ * Lifecycle: `startService()` → `onCreate` (wake lock + TelephonyMonitor) →
+ * `onStartCommand` (foreground notification + spawn CallService). On
+ * task-removal we schedule an alarm to relaunch ourselves a second later.
  */
 class BackgroundService : Service() {
 
@@ -25,10 +29,17 @@ class BackgroundService : Service() {
         private const val CHANNEL_ID = "nativetalk_background"
         private const val TAG = "NativetalkCallSdk.BgService"
 
+        // Set to `false` by the JS bridge during explicit logout so that
+        // onTaskRemoved doesn't immediately respawn us. @Volatile because
+        // the flag is read/written from different threads (RN bridge thread
+        // vs main thread handling task-removal).
         @Volatile var shouldRestart = true
 
         fun startService(context: Context) {
             val intent = Intent(context, BackgroundService::class.java)
+            // `startForegroundService` (not `startService`) is required on
+            // Android 8+ — the OS gives us a 5-second window to call
+            // `startForeground` or it kills us with a SecurityException.
             context.startForegroundService(intent)
         }
 
@@ -45,20 +56,32 @@ class BackgroundService : Service() {
         createChannel()
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NativetalkCallSdk::BackgroundService")
+        // 10-minute timeout: Android's StrictMode warns if a wake lock has
+        // no timeout, and 10min is long enough to register & answer a call
+        // but short enough that a buggy service can't drain the battery.
         wakeLock?.acquire(10 * 60 * 1000L)
 
         TelephonyMonitor.start(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Must call startForeground within ~5s of startForegroundService —
+        // do it first thing here.
         startForeground(NOTIFICATION_ID, buildNotification())
+        // CallService owns the per-call notification; this service owns
+        // the "always-on" registration notification.
         applicationContext.startService(Intent(applicationContext, CallService::class.java))
+        // START_STICKY: if the OS kills us under memory pressure, restart
+        // us with a null intent. That's what we want for a keep-alive.
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        // Fires when the user swipes the app from recents. The OS often
+        // kills our service shortly after, so we set a 1-second alarm to
+        // relaunch ourselves. The alarm survives even if our process dies.
         if (shouldRestart) {
             val restart = Intent(applicationContext, BackgroundService::class.java)
             val pending = PendingIntent.getService(
@@ -75,6 +98,8 @@ class BackgroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Always release the wake lock — leaking it is one of the most
+        // common causes of Play Store battery-usage warnings.
         wakeLock?.release()
         TelephonyMonitor.stop()
     }
