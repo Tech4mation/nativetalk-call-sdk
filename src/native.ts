@@ -22,6 +22,9 @@ const LINKING_ERROR =
   `- you are not using Expo Go (use a dev client or bare workflow)\n` +
   `- (iOS) you ran 'pod install' inside the ios/ directory\n`;
 
+// Proxy fallback: if autolinking failed, every method access throws a helpful
+// error instead of a cryptic "undefined is not a function". This means a
+// misconfigured app crashes EARLY with a clear message, not deep inside JS.
 const NativetalkCallSdk =
   NativeModules.NativetalkCallSdk ??
   new Proxy(
@@ -33,6 +36,8 @@ const NativetalkCallSdk =
     }
   );
 
+// Single shared emitter — re-creating it per subscription wastes native
+// handlers and can drop events during the swap.
 export const callEvents = new NativeEventEmitter(
   NativetalkCallSdk as unknown as Parameters<typeof NativeEventEmitter>[0]
 );
@@ -53,17 +58,18 @@ export async function ensureMicPermission(): Promise<boolean> {
 
 // --- Core lifecycle ---
 
+// Idempotent on the native side, safe to call multiple times.
 export function init(cfg?: Record<string, unknown>): Promise<void> {
   return NativetalkCallSdk.init(cfg ?? {});
 }
 
-/** Start the Android background + foreground services. No-op on iOS. */
+// Android-only: iOS uses CallKit + VoIP push instead of a background
+// service. Guarding here keeps the JS API symmetric across platforms.
 export function startNativeServices(): void {
   if (Platform.OS !== 'android') return;
   NativetalkCallSdk.startNativeServices();
 }
 
-/** Stop the Android background + foreground services. No-op on iOS. */
 export function stopNativeServices(logout = false): void {
   if (Platform.OS !== 'android') return;
   NativetalkCallSdk.stopNativeServices(logout);
@@ -82,6 +88,8 @@ export function register(account: RegisterArgs): void {
   NativetalkCallSdk.register(account);
 }
 
+// Optional-chained: older native builds may not export this method, and
+// we'd rather no-op than crash on a non-critical refresh.
 export function refreshRegisters(): void {
   NativetalkCallSdk.refreshRegisters?.();
 }
@@ -144,12 +152,19 @@ export function getCallLogs(): Promise<CallLogEntry[]> {
 
 // --- iOS push token (advanced; only used if you wire VoIP push manually) ---
 
+// Call from the host AppDelegate's PushKit `didUpdate` handler so the token
+// gets attached to the SIP account params. Android FCM uses a different flow.
 export function registerVoipToken(hex: string): void {
   if (Platform.OS !== 'ios') return;
   NativetalkCallSdk.registerVoipToken?.(hex);
 }
 
 // --- Event subscriptions ---
+//
+// Typed wrappers around `callEvents.addListener` — using string-typed event
+// names directly would lose autocomplete and let typos slip through. The
+// `Sub` return shape mirrors NativeEventEmitter's so consumers can call
+// `.remove()` without importing RN types.
 type Listener<T> = (event: T) => void;
 type Sub = { remove: () => void };
 
@@ -162,6 +177,8 @@ export const on = {
     callEvents.addListener('CallState', cb),
   CallEnded: (cb: Listener<any>): Sub =>
     callEvents.addListener('CallEnded', cb),
+  // The TM* events are Android-only (telephony observer for native GSM
+  // calls). They never fire on iOS but the subscription is harmless.
   TMPhoneCallState: (cb: Listener<any>): Sub =>
     callEvents.addListener('TMPhoneCallState', cb),
   TMPhoneCallInfo: (cb: Listener<any>): Sub =>
