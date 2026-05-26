@@ -1,0 +1,15 @@
+example/
+docs/
+.github/
+.vscode/
+.idea/
+.gitignore
+.npmignore
+*.tgz
+node_modules/
+android/build/
+android/.gradle/
+ios/build/
+ios/Pods/
+src/__tests__/
+src/__mocks__/

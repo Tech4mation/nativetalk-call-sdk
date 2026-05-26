@@ -1,0 +1,74 @@
+{
+  "name": "@nativetalk/react-native-call-sdk",
+  "version": "0.1.0",
+  "description": "Plug-and-play SIP/VoIP calling SDK for React Native, powered by Linphone. Provides registration, dial, answer, hold, mute, speaker, DTMF, and call logs — plus optional UI components.",
+  "main": "lib/commonjs/index.js",
+  "module": "lib/module/index.js",
+  "types": "lib/typescript/index.d.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "exports": {
+    ".": {
+      "react-native": "./src/index.ts",
+      "types": "./lib/typescript/index.d.ts",
+      "import": "./lib/module/index.js",
+      "require": "./lib/commonjs/index.js",
+      "default": "./lib/commonjs/index.js"
+    },
+    "./ui": {
+      "react-native": "./src/ui/index.ts",
+      "types": "./lib/typescript/ui/index.d.ts",
+      "import": "./lib/module/ui/index.js",
+      "require": "./lib/commonjs/ui/index.js",
+      "default": "./lib/commonjs/ui/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "ui",
+    "android",
+    "ios",
+    "*.podspec",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json --module commonjs --outDir lib/commonjs && tsc --project tsconfig.build.json --module esnext --outDir lib/module && tsc --project tsconfig.build.json --emitDeclarationOnly --declaration --outDir lib/typescript",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf lib"
+  },
+  "keywords": [
+    "react-native",
+    "sip",
+    "voip",
+    "linphone",
+    "calling",
+    "dialer",
+    "callkit",
+    "telephony"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tech4mation/nativetalk-call-sdk.git"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=17.0.0",
+    "react-native": ">=0.70.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-native": "^0.72.0",
+    "react": "19.1.0",
+    "react-native": "0.80.1",
+    "rimraf": "^5.0.0",
+    "typescript": "5.0.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

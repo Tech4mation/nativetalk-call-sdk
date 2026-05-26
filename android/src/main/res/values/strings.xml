@@ -1,0 +1,9 @@
+<resources>
+    <string name="nativetalk_call_sdk_app_name" translatable="false">App</string>
+    <string name="nativetalk_call_sdk_notif_channel_call_id" translatable="false">nativetalk_calls</string>
+    <string name="nativetalk_call_sdk_notif_channel_call_name">Calls</string>
+    <string name="nativetalk_call_sdk_notif_channel_background_id" translatable="false">nativetalk_background</string>
+    <string name="nativetalk_call_sdk_notif_channel_background_name">Call service</string>
+    <string name="nativetalk_call_sdk_ready_title">Ready to receive calls</string>
+    <string name="nativetalk_call_sdk_ready_body">Keeping the connection alive</string>
+</resources>
