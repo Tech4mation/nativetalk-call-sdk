@@ -12,9 +12,15 @@ import org.linphone.core.RegistrationState
 
 /**
  * Native bridge exposed to JavaScript as `NativeModules.NativetalkCallSdk`.
- * Almost every method delegates to [CoreManager]; this class is intentionally
- * thin so the call engine can be exercised even without React (e.g. from
- * background services).
+ *
+ * Intentionally thin: every @ReactMethod is a 1-line delegate to
+ * [CoreManager] or another singleton. Keeping the engine in [CoreManager]
+ * (not here) means push-driven background services can drive calls before
+ * React has even mounted.
+ *
+ * The string `"NativetalkCallSdk"` is the contract with JS — must exactly
+ * match `NativeModules.NativetalkCallSdk` and `@objc(NativetalkCallSdk)` on
+ * iOS. Renaming this breaks the bridge silently.
  */
 class NativetalkCallSdkModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -24,6 +30,8 @@ class NativetalkCallSdkModule(private val reactContext: ReactApplicationContext)
         private const val TAG = "NativetalkCallSdk"
     }
 
+    // Lazily-created tone generator. Allocating a ToneGenerator pre-warms
+    // the audio HAL (~50ms hit), so we defer until the first key press.
     private var dtmfTone: ToneGenerator? = null
 
     override fun getName(): String = NAME
@@ -129,11 +137,25 @@ class NativetalkCallSdkModule(private val reactContext: ReactApplicationContext)
 
     // === Misc ===
 
+    /**
+     * Plays a local DTMF UI tone — for tactile feedback when the user taps
+     * the dial-pad. Does NOT send anything over an active call (that's
+     * `sendDtmf`).
+     *
+     * Unlike the iOS side (which synthesises tones manually via
+     * AVAudioEngine), Android's stock `ToneGenerator` already routes
+     * correctly through the voice-call audio stream, including BT headsets.
+     * The volume parameter (60/100) is moderate — full volume sounds
+     * harsh when held to the ear.
+     */
     @ReactMethod
     fun playKeyTone(d: String) {
         if (dtmfTone == null) {
             dtmfTone = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 60)
         }
+        // Each key has a dedicated constant (TONE_DTMF_0..9, _S for *, _P
+        // for #). Anything else falls back to a generic beep so a typo
+        // produces SOMETHING audible rather than silence.
         val tone = when (d) {
             "0" -> ToneGenerator.TONE_DTMF_0
             "1" -> ToneGenerator.TONE_DTMF_1
@@ -149,14 +171,23 @@ class NativetalkCallSdkModule(private val reactContext: ReactApplicationContext)
             "#" -> ToneGenerator.TONE_DTMF_P
             else -> ToneGenerator.TONE_PROP_BEEP
         }
+        // 120ms — matches the iOS DTMF feedback duration and the stock
+        // dialer's feel. Anything longer feels laggy on rapid tapping.
         dtmfTone?.startTone(tone, 120)
     }
 
-    // Required for NativeEventEmitter — these are no-ops because we forward
-    // every event via DeviceEventManagerModule.RCTDeviceEventEmitter.
+    // RN's NativeEventEmitter calls addListener/removeListeners when JS
+    // subscribes/unsubscribes. Required so RN doesn't warn at runtime; we
+    // don't track count because we use RCTDeviceEventEmitter directly from
+    // [CoreManager], which keeps events flowing regardless of subscriber
+    // count.
     @ReactMethod fun addListener(event: String) {}
     @ReactMethod fun removeListeners(count: Int) {}
 
+    // Called when RN tears down the bridge (app close, hot reload). We
+    // null-out the React reference so [CoreManager.emit] becomes a no-op
+    // — but the underlying Linphone core keeps running, ready for a fresh
+    // React context to attach later.
     override fun onCatalystInstanceDestroy() {
         TelephonyMonitor.detachReact()
         CoreManager.detachReact()
