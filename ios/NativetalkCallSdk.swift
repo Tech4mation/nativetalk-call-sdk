@@ -6,26 +6,84 @@ import linphonesw
 /**
  * Native bridge exposed to JavaScript as `NativeModules.NativetalkCallSdk`.
  *
- * Mirrors the JS API: init, register, call, answer, decline, end, mute,
- * speaker, hold, resume, sendDtmf, playKeyTone, getCallLogs,
- * getRegistrationStatus. CallKit and VoIP-push integration is left to the
- * host app — see `docs/ios-setup.md`.
+ * ──────────────────────────────────────────────────────────────────────────
+ *  Mental model
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ *  This class owns ONE Linphone `Core` instance per app lifecycle. The Core
+ *  is the SIP/RTP engine; we just drive it and forward its events back to
+ *  JS via `sendEvent(withName:body:)`.
+ *
+ *  Unlike Android, iOS doesn't run our own foreground service for calls —
+ *  Apple wants CallKit to own that UX. So this class is purely a bridge:
+ *
+ *      JS  ── NativeModules.NativetalkCallSdk.dial("…") ──►  this class
+ *      this class  ── core.inviteAddress(…) ──►  Linphone
+ *      Linphone  ── onCallStateChanged ──►  NativetalkCoreDelegate
+ *      delegate  ── sendEvent("CallState", …) ──►  JS
+ *
+ *  CallKit + VoIP push wiring lives in the HOST app's AppDelegate. We
+ *  expose a hook (`registerVoipToken`) so the AppDelegate can hand us the
+ *  push token; everything else (PKPushRegistry, CXProvider, etc.) is the
+ *  host app's responsibility. See `docs/push-notifications.md` for the
+ *  full AppDelegate template.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ *  Threading
+ * ──────────────────────────────────────────────────────────────────────────
+ *  All methods run on the main queue (`requiresMainQueueSetup` returns
+ *  true). Linphone's iOS binding is happy with this — it dispatches its
+ *  own audio/IO threads internally. We just need to be careful that any
+ *  long-running JS callback doesn't block the main thread, since that
+ *  would stall both UI and call signalling.
  */
 @objc(NativetalkCallSdk)
 class NativetalkCallSdk: RCTEventEmitter {
 
+  // The Linphone engine. Lazily initialised on first init() call and kept
+  // alive for the rest of the app lifecycle. Optional because creation can
+  // fail (rare) — in that case we log and the rest of the methods become
+  // no-ops.
   private var core: Core?
+
+  // The delegate that translates Linphone events into RN events. Held as a
+  // property so it isn't deallocated while attached to the core.
   private var coreDelegate: NativetalkCoreDelegate?
+
+  // Guards against re-entrant end() calls. Linphone takes ~500ms to fully
+  // terminate; if the user double-taps the hang-up button in that window
+  // we'd otherwise call terminate() twice and crash.
   fileprivate var isEndingCall = false
+
+  // VoIP push token. Cached so we can reapply it whenever the SIP account
+  // is created or refreshed — push tokens have to be attached to the
+  // PROXY config, not stored globally.
   private var voipTokenHex: String?
 
+  // RN requires this to be true if the module touches UIKit on init.
+  // Linphone Core creation doesn't strictly need the main queue, but
+  // CallKit / AVAudioSession do, so it's simpler to be main-queue-only.
   override static func requiresMainQueueSetup() -> Bool { true }
 
+  // Events we promise to emit. RN throws at runtime if we emit any name
+  // that isn't in this list.
   override func supportedEvents() -> [String]! {
     return ["RegistrationChanged", "CallIncoming", "CallState", "CallEnded"]
   }
 
-  // MARK: - Audio session helpers
+  // MARK: - AVAudioSession dance
+  //
+  // iOS audio is configured via a global "audio session" object. The order
+  // matters:
+  //   1. setCategory   — what KIND of audio are we using (playAndRecord =
+  //                       full-duplex voice call).
+  //   2. setMode       — what specific profile (voiceChat enables AGC, AEC,
+  //                       and Bluetooth HFP routing).
+  //   3. setActive     — actually claim the audio hardware.
+  //
+  // CallKit will activate the audio session automatically when the call
+  // connects, but for outgoing calls we need to bootstrap it ourselves so
+  // Linphone has something to write into.
 
   private func startAudioSession() {
     let s = AVAudioSession.sharedInstance()
@@ -34,6 +92,11 @@ class NativetalkCallSdk: RCTEventEmitter {
     try? s.setActive(true)
   }
 
+  // Reapply the audio session if something else (e.g. AVAudioPlayer for a
+  // notification sound) has changed it under us. The `isOtherAudioPlaying`
+  // guard avoids interrupting Apple Music / podcast playback unnecessarily —
+  // CallKit's audio activation will handle that case more gracefully than
+  // our manual override.
   private func ensureAudioSessionActive() {
     let s = AVAudioSession.sharedInstance()
     guard !s.isOtherAudioPlaying else { return }
@@ -49,6 +112,21 @@ class NativetalkCallSdk: RCTEventEmitter {
   }
 
   // MARK: - UI tone (DTMF feedback for the dial-pad)
+  //
+  // Why we don't use the system AudioServicesPlaySystemSound: it's hardcoded
+  // to play through the loudspeaker and ignores the audio session's
+  // routing, which is wrong on a Bluetooth headset. Generating the tones
+  // ourselves through AVAudioEngine respects the current output route.
+  //
+  // The DTMF dual-tone frequencies are an ITU standard — each key is the
+  // sum of one low-group and one high-group sine wave. The classic Bell
+  // System matrix:
+  //
+  //               1209Hz   1336Hz   1477Hz
+  //       697Hz     1        2        3
+  //       770Hz     4        5        6
+  //       852Hz     7        8        9
+  //       941Hz     *        0        #
 
   private var toneEngine: AVAudioEngine?
   private var toneNode: AVAudioSourceNode?
@@ -65,19 +143,29 @@ class NativetalkCallSdk: RCTEventEmitter {
     let d = String(digit)
     guard let (f1, f2) = dtmfMap[d] else { return }
 
+    // Lazy-init the engine on first key press to avoid paying ~10ms of
+    // setup cost during app launch when most users never touch the dialer.
     if toneEngine == nil { toneEngine = AVAudioEngine() }
+
+    // If the user mashes the keypad, tear down the previous tone node
+    // before starting a new one — overlapping nodes cause clicks/pops.
     if let node = toneNode {
       node.removeTap(onBus: 0)
       toneEngine?.detach(node)
       toneNode = nil
     }
 
+    // 48 kHz matches what most iOS hardware uses internally — using the
+    // device's native rate avoids an extra sample-rate conversion stage.
     let sr = 48000.0
     var t: Double = 0
     let dt = 1.0 / sr
-    let amp: Float = 0.18
+    let amp: Float = 0.18      // gentle "click" volume, not full DTMF
     let twoPi = 2.0 * Double.pi
 
+    // AVAudioSourceNode lets us synthesise samples in a render callback.
+    // We sum the two sines (each with half amplitude so the sum stays
+    // within ±1.0) and write the same value to every channel.
     let node = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
       let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
       for frame in 0..<Int(frameCount) {
@@ -104,6 +192,8 @@ class NativetalkCallSdk: RCTEventEmitter {
     }
     toneNode = node
 
+    // 120ms beep — matches Apple's stock dialer feel. Any longer and it
+    // starts to feel laggy; any shorter and it sounds like a click.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
       guard let self = self, let n = self.toneNode else { return }
       self.toneEngine?.disconnectNodeInput(n)
@@ -114,6 +204,17 @@ class NativetalkCallSdk: RCTEventEmitter {
 
   // MARK: - Core lifecycle
 
+  /**
+   * Boot Linphone. Idempotent — calling twice is a no-op.
+   *
+   * Called automatically by `register()` if it sees no core yet, so most
+   * apps never need to invoke this directly. The `cfg` param is reserved
+   * for future use (e.g. log level, codec preferences); currently ignored.
+   *
+   * `pushNotificationEnabled = true` tells Linphone we want it to use the
+   * VoIP push token attached to the proxy config. We still need the host
+   * app to wire PushKit and feed us the token via `registerVoipToken`.
+   */
   @objc(init:)
   func `init`(_ cfg: NSDictionary?) {
     if core != nil { return }
@@ -133,15 +234,30 @@ class NativetalkCallSdk: RCTEventEmitter {
     }
   }
 
+  /**
+   * iOS counterpart to the Android background service.
+   *
+   * iOS doesn't allow long-running background services for VoIP — Apple's
+   * model is "the app sleeps; VoIP push wakes it on demand". So
+   * `startNativeServices` just ensures the core exists and is ready to
+   * receive a push-driven re-register. The actual "service" is provided
+   * by the host app's PushKit/CallKit code (see docs/push-notifications.md).
+   */
   @objc(startNativeServices)
   func startNativeServices() {
-    // iOS uses CallKit + VoIP push from the host app — no background service.
     if core == nil { self.`init`(nil) }
   }
 
+  /**
+   * Soft-stop: clear all SIP accounts but keep the Core alive so a future
+   * `register()` doesn't have to pay the startup cost.
+   *
+   * We don't fully tear down the core because doing so leaves the
+   * AVAudioSession in a half-deactivated state that the next call has to
+   * recover from. Better to keep it warm.
+   */
   @objc(stopNativeServices:)
   func stopNativeServices(_ logout: Bool) {
-    // Soft-stop: drop accounts but keep core alive so future register() works.
     core?.clearAccounts()
     core?.clearProxyConfig()
     core?.clearAllAuthInfo()
@@ -149,6 +265,20 @@ class NativetalkCallSdk: RCTEventEmitter {
 
   // MARK: - Registration
 
+  /**
+   * Register a SIP account, replacing any previous one.
+   *
+   * Unlike the Android side (which has a "same user → skip wipe" fast
+   * path), we always wipe on iOS. The reason: iOS apps re-mount this
+   * module on every cold start, and they typically only call register()
+   * once per session, so the wipe cost is negligible. Keeping the code
+   * simpler is the better tradeoff here.
+   *
+   * Account params are the modern Linphone API for registration (vs. the
+   * legacy ProxyConfig). They support push notification config in a way
+   * proxy configs don't, which matters on iOS where VoIP push is the
+   * primary delivery mechanism.
+   */
   @objc(register:)
   func register(_ acc: NSDictionary) {
     if core == nil { self.`init`(nil) }
@@ -160,18 +290,28 @@ class NativetalkCallSdk: RCTEventEmitter {
     let transport = (acc["transport"] as? String)?.lowercased()
 
     do {
+      // Wipe any previous registration. See Android CoreManager's
+      // wipeAllAccounts() docs for why this matters.
       core.clearAccounts()
       core.clearProxyConfig()
       core.clearAllAuthInfo()
 
+      // Auth info = "if anyone challenges us with a 401, here's the
+      // password". Keyed by username + domain.
       let auth = try Factory.Instance.createAuthInfo(
         username: username, userid: nil, passwd: password,
         ha1: nil, realm: nil, domain: domain
       )
       core.addAuthInfo(info: auth)
 
+      // Identity = our SIP address. Server = where to send REGISTER.
+      // These are often the same hostname but conceptually distinct.
       let identityAddr = try Factory.Instance.createAddress(addr: "sip:\(username)@\(domain)")
       let serverAddr = try Factory.Instance.createAddress(addr: "sip:\(domain)")
+
+      // Transport: TLS (encrypted), TCP (plain reliable), UDP (plain
+      // best-effort). Default is UDP if unspecified — but most modern
+      // PBXs require TCP or TLS for security.
       if let t = transport {
         switch t {
         case "tls": try serverAddr.setTransport(newValue: .Tls)
@@ -183,8 +323,12 @@ class NativetalkCallSdk: RCTEventEmitter {
       let params = try core.createAccountParams()
       try params.setIdentityaddress(newValue: identityAddr)
       try params.setServeraddress(newValue: serverAddr)
-      params.pushNotificationAllowed = true
+      params.pushNotificationAllowed = true   // tell the server we accept push
       params.registerEnabled = true
+
+      // Attach any cached VoIP push token. If we don't have one yet
+      // (token comes from PushKit asynchronously), it'll be applied later
+      // via registerVoipToken().
       if let token = self.voipTokenHex, !token.isEmpty {
         params.pushNotificationConfig?.param = token
       }
@@ -279,6 +423,23 @@ class NativetalkCallSdk: RCTEventEmitter {
     }
   }
 
+  /**
+   * Reject an incoming call with a specific SIP response code.
+   *
+   * The reason determines what the CALLER sees:
+   *   - .Busy (486)                  → "User busy" — often → voicemail
+   *   - .NotAcceptable (406)         → "Not acceptable here"
+   *   - .TemporarilyUnavailable(480) → "Temporarily unavailable"
+   *   - .Declined (default)          → "Call declined"
+   *
+   * Most apps want .Busy for "don't disturb me right now, take a message"
+   * or .Declined for "I'm choosing not to answer".
+   *
+   * The state check matters: `decline()` is only valid for incoming calls
+   * that haven't yet been accepted. If we somehow got into this method
+   * with an outgoing or already-connected call, we fall back to
+   * `terminate()` which works in any state.
+   */
   @objc(decline:)
   func decline(_ reasonStr: NSString?) {
     ensureAudioSessionActive()
@@ -297,11 +458,25 @@ class NativetalkCallSdk: RCTEventEmitter {
       do { try call.decline(reason: r) }
       catch { NSLog("NativetalkCallSdk: decline() failed: \(error)") }
     default:
+      // Not a ringing call — `decline` would throw. Fall back to terminate.
       do { try call.terminate() }
       catch { NSLog("NativetalkCallSdk: terminate() (fallback) failed: \(error)") }
     }
   }
 
+  /**
+   * End the active call (any direction, any state).
+   *
+   * `isEndingCall` guards against re-entrancy: Linphone takes ~500ms to
+   * fully tear down a call, and the user double-tapping the hang-up
+   * button in that window would call terminate() twice and crash. The
+   * guard is cleared automatically by [NativetalkCoreDelegate] when the
+   * call reaches a terminal state.
+   *
+   * The state-aware dispatch (`decline` for ringing calls, `terminate`
+   * for everything else) is required because Linphone disallows
+   * `terminate()` on a call that hasn't been answered.
+   */
   @objc(end)
   func end() {
     guard let call = core?.currentCall, !isEndingCall else { return }
