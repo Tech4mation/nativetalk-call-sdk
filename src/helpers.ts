@@ -6,19 +6,33 @@
  */
 import type { CallState, RegistrationState } from './types';
 
-/** Strips `http(s)://` and trailing `/` from a tenant domain. */
+/**
+ * Strips `http(s)://` and trailing `/` from a tenant domain.
+ *
+ * Multi-tenant backends often hand the SDK an HTTP URL ("https://t1.example.com/")
+ * when what we need is a bare SIP host ("t1.example.com"). Doing this once
+ * here is friendlier than failing the registration with a cryptic error.
+ */
 export function formatTenantDomain(domain: string | undefined | null): string {
   if (!domain) return '';
   return domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
 }
 
-/** Extract the user-part of `sip:user@domain` (or returns the input unchanged). */
+/**
+ * Extract the user-part of `sip:user@domain` (or returns the input unchanged).
+ *
+ * The regex stops at `@`, `;` (URI params like `;transport=tcp`), and `>`
+ * (display-name angle brackets) so it handles all three common SIP URI
+ * formats without separate parsers.
+ */
 export function parseSipUser(sipUri: string = ''): string {
   const m = /sip:([^@;>]+)/i.exec(sipUri);
   return m?.[1] ?? sipUri.replace(/^sip:/i, '');
 }
 
-/** Sanitize a string to only digits, `+`, `#`, `*`. */
+// Allowlist anything dialable: digits plus the three special SIP keys.
+// Notably DROPS letters — PSTN gateways reject them, and the dial-pad
+// converts letters via the standard ABC/DEF mapping before getting here.
 export function sanitizeDial(input: string = ''): string {
   return input.replace(/[^\d+#*]/g, '');
 }
@@ -39,9 +53,13 @@ export function initialsFrom(name: string | undefined | null): string {
 }
 
 /**
- * Linphone numeric-state → string-state mapping. The SDK's native modules emit
- * states as strings (e.g. `"Connected"`), but historical/raw integrations may
- * still send numeric codes, so we accept both.
+ * Linphone numeric-state → string-state mapping.
+ *
+ * The SDK's current native modules emit states as strings ("Connected"),
+ * but older Linphone bindings — and any third party that wires up the
+ * native module directly — may still send the raw enum ordinals. Keeping
+ * this map means a Linphone upgrade or a different binding doesn't break
+ * existing apps.
  */
 const CALL_STATE_BY_INT: Record<number, CallState> = {
   0: 'Idle',
@@ -142,9 +160,13 @@ export function callStatusLabel(status: CallState): string {
 /**
  * Resolve a destination string to a SIP URI.
  *
- * - `100` + `domain=sip.example.com` → `sip:100@sip.example.com`
- * - `sip:100@sip.example.com` → unchanged
- * - `100@sip.example.com` → `sip:100@sip.example.com`
+ * Three-case dispatch in order of "most explicit wins":
+ *   1. `sip:100@gw.com`     → already a URI, pass through unchanged.
+ *   2. `100@gw.com`         → caller specified the gateway, just prefix `sip:`.
+ *   3. `100` (bare)         → fill in the configured domain.
+ *
+ * This lets apps mix internal-extension dialling with PSTN gateway URIs
+ * without needing a separate API.
  */
 export function destinationToSipUri(
   destination: string,
