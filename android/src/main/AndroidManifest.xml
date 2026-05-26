@@ -1,0 +1,72 @@
+<manifest
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Basic functionality -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Audio & calling core -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+
+    <!-- Telecom framework (modern VoIP) -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+
+    <!-- Foreground service requirements (Android 14+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+
+    <!-- Notifications & UI -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!--
+      Contacts permission is optional — only required if you opt in to the
+      contact-lookup feature on the device call observer.  Apps that don't
+      need it can suppress at the app level.
+    -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" tools:node="merge" />
+
+    <application>
+        <service
+            android:name="io.nativetalk.callsdk.CallService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall|microphone">
+            <intent-filter>
+                <action android:name="io.nativetalk.callsdk.CallService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="io.nativetalk.callsdk.BackgroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall" />
+
+        <service
+            android:name="io.nativetalk.callsdk.NativetalkCallScreeningService"
+            android:permission="android.permission.BIND_SCREENING_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name="io.nativetalk.callsdk.CallActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="io.nativetalk.callsdk.ACTION_ANSWER" />
+                <action android:name="io.nativetalk.callsdk.ACTION_DECLINE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
