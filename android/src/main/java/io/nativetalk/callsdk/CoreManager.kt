@@ -170,6 +170,7 @@ object CoreManager {
             }
 
             override fun onCallStateChanged(c: Core, call: Call, state: Call.State, message: String) {
+                Log.d(TAG, "CallState -> $state ($message)")
                 // Always emit the raw state — JS does its own FSM bucketing.
                 emit("CallState", Arguments.createMap().apply {
                     putString("state", state.toString())
@@ -184,12 +185,10 @@ object CoreManager {
                         val user = addr?.username ?: ""
                         val uri = addr?.asStringUriOnly() ?: addr?.asString() ?: ""
 
-                        // Show the heads-up notification BEFORE telling JS.
-                        // If the app is in the background the notification
-                        // is the only UI the user can see — without it the
-                        // call would silently miss-fire.
-                        showCallNotification(call, true)
+                        Log.d(TAG, "Incoming call from $user ($uri)")
 
+                        // Emit to JS first so the in-app UI can react even if the
+                        // system notification fails (e.g. POST_NOTIFICATIONS denied).
                         emit("CallIncoming", Arguments.createMap().apply {
                             putString(
                                 "from",
@@ -200,6 +199,13 @@ object CoreManager {
                             putString("uri", uri)
                             putString("callId", call.callLog?.callId ?: "")
                         })
+
+                        // Then show the heads-up notification so the call is visible
+                        // when the app is backgrounded. Wrapped in try/catch so a
+                        // notification failure never suppresses the JS event above.
+                        try { showCallNotification(call, true) } catch (e: Exception) {
+                            Log.e(TAG, "showCallNotification failed", e)
+                        }
                     }
 
                     // ── Outbound: we just placed a call ───────────────────

@@ -45,6 +45,7 @@ android {
 repositories {
     mavenCentral()
     google()
+    maven { url "https://download.linphone.org/maven_repository" }
 }
 
 dependencies {

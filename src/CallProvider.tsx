@@ -97,7 +97,7 @@ const RESUMED_STATES: ReadonlyArray<CallState> = [
   'StreamsRunning',
 ];
 
-export function CallProvider(props: CallProviderProps): JSX.Element {
+export function CallProvider(props: CallProviderProps): React.JSX.Element {
   const {
     children,
     config = null,
@@ -374,6 +374,17 @@ export function CallProvider(props: CallProviderProps): JSX.Element {
   const registerWith = useCallback(
     async (cfg: SipConfig) => {
       const domain = formatTenantDomain(cfg.domain);
+
+      // Strip port before domain check (e.g. "charles.nativetalk.io:5060")
+      const domainHost = domain.split(':')[0]!;
+      if (!domainHost.endsWith('.nativetalk.io') && domainHost !== 'nativetalk.io') {
+        onErrorRef.current?.({
+          code: 'INVALID_DOMAIN',
+          message: `Domain "${domainHost}" is not a valid Nativetalk domain. Only *.nativetalk.io domains are supported.`,
+        });
+        return;
+      }
+
       const transport = cfg.transport ?? 'tcp';
       Native.register({
         username: cfg.username,

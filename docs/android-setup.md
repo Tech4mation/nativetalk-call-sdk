@@ -4,6 +4,35 @@ The SDK is autolinked, so most apps need nothing more than the steps in
 [installation.md](installation.md). This page documents what the SDK adds to
 your Android build and how to customise it.
 
+## Required: add the Linphone Maven repository
+
+The Linphone SDK is not published to Maven Central or Google's Maven. Add their
+repository inside the `dependencyResolutionManagement` block in `android/settings.gradle`:
+
+```groovy
+// android/settings.gradle
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://www.jitpack.io" }
+        maven {
+            name = "linphone.org maven repository"
+            url = uri("https://download.linphone.org/maven_repository")
+            content {
+                includeGroup("org.linphone")
+            }
+        }
+    }
+}
+```
+
+Without this, your Gradle build will fail with:
+```
+Could not find org.linphone:linphone-sdk-android:x.x.x.
+```
+
 ## What the SDK contributes
 
 ### Manifest entries
