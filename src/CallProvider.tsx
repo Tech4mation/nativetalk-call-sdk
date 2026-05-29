@@ -97,7 +97,7 @@ const RESUMED_STATES: ReadonlyArray<CallState> = [
   'StreamsRunning',
 ];
 
-export function CallProvider(props: CallProviderProps): JSX.Element {
+export function CallProvider(props: CallProviderProps): React.JSX.Element {
   const {
     children,
     config = null,
