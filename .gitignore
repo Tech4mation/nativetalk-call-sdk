@@ -44,6 +44,5 @@ example/android/app/build/
 
 # Misc
 *.tgz
-.env
-.env.local
 coverage/
+config.bat
