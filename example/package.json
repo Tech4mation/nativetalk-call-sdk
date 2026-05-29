@@ -8,7 +8,7 @@
     "start": "react-native start"
   },
   "dependencies": {
-    "@nativetalk/react-native-call-sdk": "link:..",
+    "@nativetalk/react-native-call-sdk": "file:..",
     "react": "19.1.0",
     "react-native": "0.80.1",
     "react-native-safe-area-context": "^5.5.2"
@@ -17,6 +17,7 @@
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
+    "@react-native-community/cli": "latest",
     "@react-native/babel-preset": "0.80.1",
     "@react-native/metro-config": "0.80.1",
     "@react-native/typescript-config": "0.80.1",
