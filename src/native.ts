@@ -39,7 +39,7 @@ const NativetalkCallSdk =
 // Single shared emitter — re-creating it per subscription wastes native
 // handlers and can drop events during the swap.
 export const callEvents = new NativeEventEmitter(
-  NativetalkCallSdk as unknown as Parameters<typeof NativeEventEmitter>[0]
+  NativetalkCallSdk as unknown as ConstructorParameters<typeof NativeEventEmitter>[0]
 );
 
 /** Request microphone permission on Android. Returns true if granted (or platform is iOS). */
