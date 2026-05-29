@@ -20,11 +20,14 @@ Pod::Spec.new do |s|
   # React Native peer.
   s.dependency "React-Core"
 
-  # Linphone SDK.
-  #
-  # NOTE: there is no official Linphone CocoaPod for the modern Swift binding
-  # (`linphonesw`). Apps consuming this SDK must add the Linphone framework to
-  # their Xcode project — either via the official binary release at
-  # https://gitlab.linphone.org/BC/public/linphone-sdk/-/releases or via a
-  # private vendored framework. See `docs/ios-setup.md` for the exact steps.
+  # Linphone Swift wrapper.
+  # There is no official CocoaPod; consumers must supply linphonesw themselves.
+  # For local/dev installs, reference a local linphonesw.podspec via the app's
+  # Podfile (see docs/ios-setup.md). For npm distribution, the SDK will ship a
+  # precompiled xcframework (roadmap item) so this dependency disappears.
+  s.dependency "linphonesw"
+
+  s.pod_target_xcconfig = {
+    'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'NO',
+  }
 end
