@@ -629,6 +629,10 @@ object CoreManager {
         }
     }
 
+    fun setNetworkReachable(reachable: Boolean) {
+        core?.isNetworkReachable = reachable
+    }
+
     fun call(sipUri: String) {
         val c = core ?: return
         try {

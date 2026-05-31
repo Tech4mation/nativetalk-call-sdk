@@ -7,6 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
@@ -50,6 +54,18 @@ class BackgroundService : Service() {
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var connectivityManager: ConnectivityManager? = null
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            Log.d(TAG, "Network available — triggering re-registration")
+            CoreManager.refreshRegisters()
+        }
+        override fun onLost(network: Network) {
+            Log.d(TAG, "Network lost")
+            CoreManager.setNetworkReachable(false)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -62,6 +78,12 @@ class BackgroundService : Service() {
         wakeLock?.acquire(10 * 60 * 1000L)
 
         TelephonyMonitor.start(applicationContext)
+
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        connectivityManager?.registerNetworkCallback(request, networkCallback)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -98,8 +120,7 @@ class BackgroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Always release the wake lock — leaking it is one of the most
-        // common causes of Play Store battery-usage warnings.
+        runCatching { connectivityManager?.unregisterNetworkCallback(networkCallback) }
         wakeLock?.release()
         TelephonyMonitor.stop()
     }
