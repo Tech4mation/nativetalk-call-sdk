@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import Network
 import React
 import linphonesw
 
@@ -59,6 +60,9 @@ class NativetalkCallSdk: RCTEventEmitter {
   // is created or refreshed — push tokens have to be attached to the
   // PROXY config, not stored globally.
   private var voipTokenHex: String?
+
+  private var pathMonitor: NWPathMonitor?
+  private let monitorQueue = DispatchQueue(label: "io.nativetalk.callsdk.network")
 
   // RN requires this to be true if the module touches UIKit on init.
   // Linphone Core creation doesn't strictly need the main queue, but
@@ -246,6 +250,33 @@ class NativetalkCallSdk: RCTEventEmitter {
   @objc(startNativeServices)
   func startNativeServices() {
     if core == nil { self.`init`(nil) }
+    startNetworkMonitoring()
+  }
+
+  private func startNetworkMonitoring() {
+    guard pathMonitor == nil else { return }
+    let monitor = NWPathMonitor()
+    monitor.pathUpdateHandler = { [weak self] path in
+      guard let self = self else { return }
+      DispatchQueue.main.async {
+        guard let core = self.core else { return }
+        if path.status == .satisfied {
+          NSLog("NativetalkCallSdk: network restored — re-registering")
+          core.networkReachable = true
+          try? core.refreshRegisters()
+        } else {
+          NSLog("NativetalkCallSdk: network lost")
+          core.networkReachable = false
+        }
+      }
+    }
+    monitor.start(queue: monitorQueue)
+    pathMonitor = monitor
+  }
+
+  private func stopNetworkMonitoring() {
+    pathMonitor?.cancel()
+    pathMonitor = nil
   }
 
   /**
@@ -258,6 +289,7 @@ class NativetalkCallSdk: RCTEventEmitter {
    */
   @objc(stopNativeServices:)
   func stopNativeServices(_ logout: Bool) {
+    stopNetworkMonitoring()
     core?.clearAccounts()
     core?.clearProxyConfig()
     core?.clearAllAuthInfo()
@@ -677,18 +709,30 @@ class NativetalkCoreDelegate: CoreDelegate {
   func onRegistrationStateChanged(
     core: Core, proxyConfig: ProxyConfig, state: RegistrationState, message: String
   ) {
-    let s: String = {
-      switch state {
-      case .None: return "none"
-      case .Progress: return "progress"
-      case .Ok: return "ok"
-      case .Cleared: return "cleared"
-      case .Failed: return "failed"
-      @unknown default: return "unknown"
-      }
-    }()
     module?.sendEvent(
       withName: "RegistrationChanged",
-      body: ["state": s, "message": message])
+      body: ["state": registrationStateString(state), "message": message])
+  }
+
+  // Linphone 5.x registers via Account internally. When refreshRegisters()
+  // fires after a network change, this callback is more reliably called than
+  // the legacy ProxyConfig-based one above.
+  func onAccountRegistrationStateChanged(
+    core: Core, account: Account, state: RegistrationState, message: String
+  ) {
+    module?.sendEvent(
+      withName: "RegistrationChanged",
+      body: ["state": registrationStateString(state), "message": message])
+  }
+
+  private func registrationStateString(_ state: RegistrationState) -> String {
+    switch state {
+    case .None: return "none"
+    case .Progress: return "progress"
+    case .Ok: return "ok"
+    case .Cleared: return "cleared"
+    case .Failed: return "failed"
+    @unknown default: return "unknown"
+    }
   }
 }
