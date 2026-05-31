@@ -30,6 +30,7 @@
     "ui",
     "android",
     "ios",
+    "plugin/build",
     "*.podspec",
     "!**/__tests__",
     "!**/__fixtures__",
@@ -38,8 +39,12 @@
   ],
   "scripts": {
     "build": "tsc --project tsconfig.build.json --module commonjs --outDir lib/commonjs && tsc --project tsconfig.build.json --module esnext --outDir lib/module && tsc --project tsconfig.build.json --emitDeclarationOnly --declaration --outDir lib/typescript",
+    "build:plugin": "tsc --project plugin/tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "clean": "rimraf lib"
+    "clean": "rimraf lib plugin/build"
+  },
+  "expo": {
+    "plugin": "./plugin/build/index.js"
   },
   "keywords": [
     "react-native",
@@ -57,10 +62,18 @@
   },
   "license": "MIT",
   "peerDependencies": {
+    "@expo/config-plugins": ">=8.0.0",
     "react": ">=17.0.0",
     "react-native": ">=0.70.0"
   },
+  "peerDependenciesMeta": {
+    "@expo/config-plugins": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@expo/config-plugins": "^10.1.2",
+    "@types/node": "^20.19.41",
     "@types/react": "^19.1.0",
     "react": "19.1.0",
     "react-native": "0.80.1",
