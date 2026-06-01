@@ -358,29 +358,149 @@ Without VoIP push, inbound calls only arrive when the SIP socket is already open
 
 ```tsx
 import React, { useState } from 'react';
-import { Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { CallProvider, useCall } from '@nativetalkcommunications/react-native-call-sdk';
 import { Dialer } from '@nativetalkcommunications/react-native-call-sdk/ui';
 
-const sip = {
-  username: '100',
-  password: 'secret',
-  domain: 'yourcompany.nativetalk.io', // must be a *.nativetalk.io domain
-  transport: 'tcp',
-};
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState('100');
+  const [password, setPassword] = useState('secret');
+  const [domain, setDomain] = useState('pbx.example.com');
+  const [transport, setTransport] = useState('tcp');
+
+  const handleLogin = () => {
+    if (!username || !password || !domain) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+    onLogin({ username, password, domain, transport });
+  };
+
+  return (
+    <View style={styles.loginContainer}>
+      <Text style={styles.title}>SIP Credentials</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Username"
+        value={username}
+        onChangeText={setUsername}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Domain"
+        value={domain}
+        onChangeText={setDomain}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Transport (tcp/udp)"
+        value={transport}
+        onChangeText={setTransport}
+      />
+      <TouchableOpacity style={styles.button} onPress={handleLogin}>
+        <Text style={styles.buttonText}>Login</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function DialerWithSignout({ onLogout }) {
+  const { isRegistered } = useCall();
+
+  return (
+    <View style={styles.dialerContainer}>
+      {isRegistered && (
+        <TouchableOpacity style={styles.signoutButton} onPress={onLogout}>
+          <Text style={styles.signoutText}>Sign Out</Text>
+        </TouchableOpacity>
+      )}
+      <Dialer />
+    </View>
+  );
+}
 
 export default function App() {
+  const [config, setConfig] = useState(null);
+
+  const handleLogin = (credentials) => {
+    setConfig(credentials);
+  };
+
+  const handleLogout = () => {
+    setConfig(null);
+  };
+
+  if (!config) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
   return (
     <CallProvider
-      config={sip}
+      config={config}
       onIncomingCall={(info) => console.log('Incoming from', info.phone)}
       onRegistrationStateChanged={(r) => console.log('SIP:', r.state)}
       onError={(e) => Alert.alert('SDK Error', e.message)}
     >
-      <Dialer />
+      <DialerWithSignout onLogout={handleLogout} />
     </CallProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loginContainer: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center',
+  },
+  dialerContainer: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  input: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  button: {
+    backgroundColor: '#2196F3',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  signoutButton: {
+    backgroundColor: '#F44336',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    margin: 12,
+  },
+  signoutText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+});
 ```
 
 **Error handling** — all SDK errors are surfaced through `onError`. The callback receives `{ code: string, message: string }`. Common codes:

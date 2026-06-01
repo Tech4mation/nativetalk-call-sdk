@@ -44,8 +44,7 @@ example/android/app/build/
 
 # Misc
 *.tgz
-.env
-.env.local
 coverage/
 ios/Frameworks/
 linphonesw-pod/Frameworks/
+config.bat
