@@ -39,13 +39,103 @@ npm install @nativetalk/react-native-call-sdk
 yarn add @nativetalk/react-native-call-sdk
 ```
 
-### Local / file: installs (development only)
+---
 
-If you are installing from a local path (e.g. `"file:../nativetalk-call-sdk"`) during SDK development, do these two steps **before** running the app — skip them for published npm installs.
+## Expo setup
 
-#### 1. Update Metro config
+If your app uses Expo, the config plugin handles all native configuration automatically.
 
-Metro does not watch outside the project root by default. Merge the following into your existing `metro.config.js`. If you already have a `watchFolders`, `extraNodeModules`, or `nodeModulesPaths` config, add the SDK entries to your existing arrays/objects rather than replacing them.
+### 1. Add the plugin to `app.json`
+
+```json
+{
+  "expo": {
+    "plugins": [
+      "@nativetalk/react-native-call-sdk"
+    ]
+  }
+}
+```
+
+### 2. Local installs only — update Metro config
+
+**Skip this step for published npm installs.** If installing from a local path (e.g. `"file:../nativetalk-call-sdk"`), add the following to your `metro.config.js`. Expo projects do not create this file by default — create it at the project root if it doesn't exist:
+
+```js
+const { getDefaultConfig } = require('expo/metro-config');
+const { mergeConfig } = require('@react-native/metro-config');
+const path = require('path');
+
+const sdkPath = path.resolve(__dirname, '../nativetalk-call-sdk'); // adjust path as needed
+
+const sdkConfig = {
+  watchFolders: [sdkPath],
+  resolver: {
+    unstable_enableSymlinks: true,
+    extraNodeModules: {
+      '@nativetalk/react-native-call-sdk': sdkPath,
+      'react': path.resolve(__dirname, 'node_modules/react'),
+      'react-native': path.resolve(__dirname, 'node_modules/react-native'),
+    },
+    nodeModulesPaths: [
+      path.resolve(__dirname, 'node_modules'),
+      path.resolve(sdkPath, 'node_modules'),
+    ],
+  },
+};
+
+module.exports = mergeConfig(getDefaultConfig(__dirname), sdkConfig);
+```
+
+### 3. Local installs only — remove duplicate react/react-native
+
+**Skip this step for published npm installs.** Check if duplicates exist in the SDK directory and delete them:
+
+```bash
+ls ../nativetalk-call-sdk/node_modules | grep react   # check first
+rm -rf ../nativetalk-call-sdk/node_modules/react
+rm -rf ../nativetalk-call-sdk/node_modules/react-native
+```
+
+### 4. Run prebuild
+
+```bash
+npx expo prebuild
+```
+
+This automatically configures:
+- **Android** — adds the Linphone Maven repository to `android/build.gradle`
+- **iOS** — adds `NSMicrophoneUsageDescription` and `UIBackgroundModes` to `Info.plist`, and adds the `pod 'linphonesw'` line to the `Podfile`
+
+Prebuild also runs `pod install` automatically. On the first run, the linphonesw pod downloads the Linphone xcframeworks (~90 seconds, one-time per machine).
+
+### Plugin options
+
+```json
+{
+  "expo": {
+    "plugins": [
+      ["@nativetalk/react-native-call-sdk", {
+        "microphonePermission": "This app needs microphone access for voice calls."
+      }]
+    ]
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `microphonePermission` | `"Microphone access is required for calls."` | iOS microphone permission dialog text |
+
+---
+
+## React Native CLI setup
+
+If you are **not** using Expo, follow the Android and iOS setup sections below manually.
+
+### Local installs only — update Metro config
+
+**Skip this step for published npm installs.** If installing from a local path (e.g. `"file:../nativetalk-call-sdk"`), merge the following into your `metro.config.js`. If you already have a `watchFolders`, `extraNodeModules`, or `nodeModulesPaths` config, add the SDK entries to your existing arrays/objects rather than replacing them.
 
 ```js
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
@@ -59,9 +149,6 @@ const sdkConfig = {
     unstable_enableSymlinks: true,
     extraNodeModules: {
       '@nativetalk/react-native-call-sdk': sdkPath,
-      // Force the host app's react + react-native to be used.
-      // Without this, Metro finds the SDK's own node_modules/react-native
-      // which has no native bridge — crashing with TurboModuleRegistry errors.
       'react': path.resolve(__dirname, 'node_modules/react'),
       'react-native': path.resolve(__dirname, 'node_modules/react-native'),
     },
@@ -72,33 +159,20 @@ const sdkConfig = {
   },
 };
 
-// mergeConfig deep-merges arrays and objects, so existing config is preserved.
 module.exports = mergeConfig(getDefaultConfig(__dirname), sdkConfig);
 ```
 
-> **If your metro.config.js already calls `mergeConfig`**, pass `sdkConfig` as an additional argument or merge it yourself — `mergeConfig` accepts multiple config objects: `mergeConfig(getDefaultConfig(__dirname), yourExistingConfig, sdkConfig)`.
+> **If your metro.config.js already calls `mergeConfig`**, pass `sdkConfig` as an additional argument: `mergeConfig(getDefaultConfig(__dirname), yourExistingConfig, sdkConfig)`.
 
-#### 2. Remove duplicate react/react-native from the SDK's node_modules
+### Local installs only — remove duplicate react/react-native
 
-The SDK has `react` and `react-native` as `devDependencies` so it can be built and type-checked in isolation during SDK development. This means if the SDK developer ran `npm install` inside the SDK directory, `nativetalk-call-sdk/node_modules/react` and `.../react-native` will exist on disk.
-
-When you do a local file install, Metro finds those copies first and uses them instead of your app's copies — breaking the native bridge with:
-
-```
-TurboModuleRegistry … was not found
-```
-
-> **This only happens with local file installs.** When the SDK is installed from npm, devDependencies are not included and this problem does not occur.
-
-Check if they exist and delete them if so:
+**Skip this step for published npm installs.** Check if duplicates exist and delete them:
 
 ```bash
 ls ../nativetalk-call-sdk/node_modules | grep react   # check first
 rm -rf ../nativetalk-call-sdk/node_modules/react
 rm -rf ../nativetalk-call-sdk/node_modules/react-native
 ```
-
-The `extraNodeModules` config above forces all `react`/`react-native` imports to resolve to the host app's copy regardless, but deleting the duplicates avoids the issue entirely.
 
 ---
 
@@ -189,48 +263,29 @@ Outbound calls, registration, and all other features work fine on the emulator.
 
 ## iOS setup
 
-### 1. Get the Linphone xcframeworks on disk
+### 1. Declare linphonesw in your Podfile
 
-Linphone for iOS is **not on CocoaPods**. CocoaPods needs the xcframeworks to already exist on disk — it does not download them itself.
-
-**If this machine has never had a Linphone iOS project before**, add the Swift Package temporarily to trigger the download, then remove it:
-
-```
-https://gitlab.linphone.org/BC/public/linphone-sdk-swift-ios.git
-```
-
-1. Open your app's `.xcworkspace`
-2. **File → Add Package Dependencies…**
-3. Paste the URL above, version rule **Up to Next Major Version** from `5.4.0`
-4. Click **Add Package** — this downloads the xcframeworks to DerivedData
-
-**Then remove it immediately** — leaving it in alongside the CocoaPods linphonesw pod causes `Multiple commands produce '…linphone.framework'`:
-
-5. Root project (blue icon) → **PROJECT** → **Package Dependencies** tab → select `linphone-sdk-swift-ios` → **−**
-6. Target → **General** → **Frameworks, Libraries, and Embedded Content** → remove `linphonesw` if present
-
-**If the xcframeworks are already on disk** (e.g. another Linphone project was previously opened on this machine), skip the SPM step entirely — just proceed to the linphonesw-pod setup below.
-
-### 2. Declare linphonesw in your Podfile
-
-The SDK's pod (`NativetalkCallSdk`) depends on `linphonesw`. You must tell CocoaPods where to find it. Add to your `ios/Podfile`:
+The SDK bundles a self-contained `linphonesw-pod` inside the npm package. Add one line to your `ios/Podfile` inside the target block:
 
 ```ruby
 target 'YourApp' do
   config = use_native_modules!
-  # ... other pods ...
 
-  pod 'linphonesw', :path => '../path/to/linphonesw-pod'
+  pod 'linphonesw', :path => '../node_modules/@nativetalk/react-native-call-sdk/linphonesw-pod'
+
+  # ... rest of Podfile
 end
 ```
-
-> **Setting up linphonesw-pod:** Create a `linphonesw-pod/` directory with a `linphonesw.podspec` that wraps the xcframeworks downloaded in step 1. See [docs/ios-setup.md](docs/ios-setup.md) for the exact steps.
 
 Then run:
 
 ```bash
 cd ios && pod install
 ```
+
+On the first install, the pod automatically downloads the Linphone xcframeworks (~90 seconds). This is a one-time operation — CocoaPods caches the result so subsequent installs are instant.
+
+> **No SPM step required.** The old workflow of adding the Linphone Swift Package in Xcode is no longer needed.
 
 ### 3. Info.plist
 
@@ -334,13 +389,12 @@ function CallControls() {
 
 | Error | Cause | Fix |
 |---|---|---|
-| `Could not find org.linphone:linphone-sdk-android` | Wrong or missing Maven repo | Add `download.linphone.org/maven_repository` to `settings.gradle` inside `dependencyResolutionManagement` |
+| `Could not find org.linphone:linphone-sdk-android` | Wrong or missing Maven repo | Add `download.linphone.org/maven_repository` to `android/build.gradle` in the `allprojects { repositories { } }` block |
 | `PlatformConstants could not be found` | New Architecture enabled but SDK uses Old Arch | Set `newArchEnabled=false` in `gradle.properties`, uninstall APK, clean rebuild |
 | `TurboModuleRegistry … was not found` | Duplicate react-native in SDK node_modules | Delete `nativetalk-call-sdk/node_modules/react` and `.../react-native` |
 | `Unable to load script` | Metro not running after clean build | Start Metro separately (`npx react-native start`), then run the app |
-| `import linphonesw` build error on iOS | Linphone SPM package not added to Xcode | Add `linphone-sdk-swift-ios` via File → Add Package Dependencies to download the xcframeworks, then remove it from the project |
-| `Multiple commands produce '…linphone.framework'` | SPM package still in project alongside the linphonesw pod | Remove `linphone-sdk-swift-ios` from Project → Package Dependencies, and remove `linphonesw` from target → Frameworks, Libraries, and Embedded Content |
-| `No podspec found for linphonesw` | Podfile missing the `pod 'linphonesw'` line | Add the linphonesw pod entry to your Podfile and re-run `pod install` |
+| `No podspec found for linphonesw` | Podfile missing the `pod 'linphonesw'` line | Add `pod 'linphonesw', :path => '../node_modules/@nativetalk/react-native-call-sdk/linphonesw-pod'` to your Podfile |
+| `'jni.h' file not found` | Linphone xcframeworks embedded directly in NativetalkCallSdk module | Ensure linphonesw is a separate pod — do not vendor the xcframeworks directly in NativetalkCallSdk |
 | Inbound calls not received (Android emulator) | Emulator NAT — SIP server can't reach `10.0.2.15` | Test on a real Android device |
 | Inbound calls not received (iOS) | App backgrounded without VoIP push | Wire up CallKit + PushKit; see `docs/push-notifications.md` |
 
