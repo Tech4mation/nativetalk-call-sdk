@@ -30,6 +30,8 @@
     "ui",
     "android",
     "ios",
+    "linphonesw-pod/Sources",
+    "linphonesw-pod/linphonesw.podspec",
     "plugin/build",
     "app.plugin.js",
     "*.podspec",
