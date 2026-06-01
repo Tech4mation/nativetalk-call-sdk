@@ -91,9 +91,9 @@ Use this when installing via `npm install file:../nativetalk-call-sdk` during SD
 }
 ```
 
-#### 2. Create `metro.config.js`
+#### 2. Update `metro.config.js`
 
-Expo projects do not create this file by default. Create it at the project root:
+If your project does not have a `metro.config.js`, create one at the project root. If it already exists, merge the SDK entries into your existing config:
 
 ```js
 const { getDefaultConfig } = require('expo/metro-config');
