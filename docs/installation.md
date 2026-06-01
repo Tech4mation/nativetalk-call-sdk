@@ -6,9 +6,9 @@ Android is largely autolinked.
 ## 1. Install the package
 
 ```bash
-npm install @nativetalk/react-native-call-sdk
+npm install @nativetalkcommunications/react-native-call-sdk
 # or
-yarn add @nativetalk/react-native-call-sdk
+yarn add @nativetalkcommunications/react-native-call-sdk
 ```
 
 ## 2. Android
@@ -127,7 +127,7 @@ SDK via `CallEngine.registerVoipToken(hex)`.
 In your `App.tsx`:
 
 ```tsx
-import { CallProvider } from '@nativetalk/react-native-call-sdk';
+import { CallProvider } from '@nativetalkcommunications/react-native-call-sdk';
 
 export default function App() {
   return (

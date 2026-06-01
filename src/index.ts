@@ -1,22 +1,22 @@
 /**
- * Public entry point for `@nativetalk/react-native-call-sdk`.
+ * Public entry point for `@nativetalkcommunications/react-native-call-sdk`.
  *
  * Most apps only need:
  *
  * ```tsx
- * import { CallProvider, useCall } from '@nativetalk/react-native-call-sdk';
+ * import { CallProvider, useCall } from '@nativetalkcommunications/react-native-call-sdk';
  * ```
  *
  * Optional UI components are exported from the `/ui` sub-path:
  *
  * ```tsx
- * import { Dialer, IncomingCallView, OutgoingCallView } from '@nativetalk/react-native-call-sdk/ui';
+ * import { Dialer, IncomingCallView, OutgoingCallView } from '@nativetalkcommunications/react-native-call-sdk/ui';
  * ```
  *
  * Power-users can reach the raw native bridge:
  *
  * ```ts
- * import { CallEngine } from '@nativetalk/react-native-call-sdk';
+ * import { CallEngine } from '@nativetalkcommunications/react-native-call-sdk';
  * CallEngine.call('sip:100@sip.example.com');
  * ```
  */

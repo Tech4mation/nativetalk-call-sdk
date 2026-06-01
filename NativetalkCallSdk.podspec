@@ -21,7 +21,7 @@ Pod::Spec.new do |s|
 
   # linphonesw is bundled inside the npm package at linphonesw-pod/.
   # The Podfile must reference it via:
-  #   pod 'linphonesw', :path => '../node_modules/@nativetalk/react-native-call-sdk/linphonesw-pod'
+  #   pod 'linphonesw', :path => '../node_modules/@nativetalkcommunications/react-native-call-sdk/linphonesw-pod'
   # The config plugin adds this line automatically for Expo users.
   s.dependency "linphonesw"
 

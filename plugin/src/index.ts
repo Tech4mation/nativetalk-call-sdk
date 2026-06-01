@@ -16,6 +16,6 @@ const withNativetalkCallSdk: ConfigPlugin<PluginOptions> = (config, options = {}
 
 export default createRunOncePlugin(
   withNativetalkCallSdk,
-  '@nativetalk/react-native-call-sdk',
+  '@nativetalkcommunications/react-native-call-sdk',
   '0.1.0'
 );

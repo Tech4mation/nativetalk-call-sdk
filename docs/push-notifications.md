@@ -184,7 +184,7 @@ trigger `register()` from the background handler:
 
 ```ts
 import messaging from '@react-native-firebase/messaging';
-import { CallEngine } from '@nativetalk/react-native-call-sdk';
+import { CallEngine } from '@nativetalkcommunications/react-native-call-sdk';
 
 messaging().setBackgroundMessageHandler(async (remote) => {
   if (remote.data?.type === 'voip_wake') {

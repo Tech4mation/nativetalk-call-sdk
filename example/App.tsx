@@ -27,12 +27,12 @@ import {
   CallProvider,
   useCall,
   type SipConfig,
-} from '@nativetalk/react-native-call-sdk';
+} from '@nativetalkcommunications/react-native-call-sdk';
 import {
   Dialer,
   IncomingCallView,
   OutgoingCallView,
-} from '@nativetalk/react-native-call-sdk/ui';
+} from '@nativetalkcommunications/react-native-call-sdk/ui';
 
 // ── Replace with your own SIP credentials, or build a login form ──
 const DEFAULT_CONFIG: SipConfig = {

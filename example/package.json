@@ -8,7 +8,7 @@
     "start": "react-native start"
   },
   "dependencies": {
-    "@nativetalk/react-native-call-sdk": "link:..",
+    "@nativetalkcommunications/react-native-call-sdk": "link:..",
     "react": "19.1.0",
     "react-native": "0.80.1",
     "react-native-safe-area-context": "^5.5.2"

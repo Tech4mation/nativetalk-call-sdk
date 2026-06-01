@@ -74,7 +74,7 @@ Host App (React)
 
 ### Example app
 
-`example/` is a minimal RN app (no navigation library — screen switching is driven purely by `useCall()` state). It resolves the SDK via `"@nativetalk/react-native-call-sdk": "link:.."` for local development.
+`example/` is a minimal RN app (no navigation library — screen switching is driven purely by `useCall()` state). It resolves the SDK via `"@nativetalkcommunications/react-native-call-sdk": "link:.."` for local development.
 
 ### Documentation
 
