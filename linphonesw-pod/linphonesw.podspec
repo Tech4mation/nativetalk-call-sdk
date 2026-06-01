@@ -9,7 +9,7 @@ Pod::Spec.new do |s|
 
   s.name         = 'linphonesw'
   s.version      = linphone_version
-  s.summary      = 'Linphone SDK Swift wrapper — bundled with @nativetalk/react-native-call-sdk'
+  s.summary      = 'Linphone SDK Swift wrapper — bundled with @nativetalkcommunications/react-native-call-sdk'
   s.description  = 'Self-contained CocoaPod that downloads and wraps the Linphone xcframeworks.'
   s.homepage     = 'https://gitlab.linphone.org/BC/public/linphone-sdk-swift-ios'
   s.license      = { :type => 'GPL', :text => 'See https://gitlab.linphone.org/BC/public/linphone-sdk-swift-ios' }

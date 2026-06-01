@@ -18,7 +18,7 @@ import {
   defaultTheme,
   mergeTheme,
   type CallTheme,
-} from '@nativetalk/react-native-call-sdk/ui';
+} from '@nativetalkcommunications/react-native-call-sdk/ui';
 ```
 
 ## `<Dialer />`
@@ -136,7 +136,7 @@ animations, no navigation integration. For richer UI, ignore them and use
 Example: a minimal custom in-call screen.
 
 ```tsx
-import { useCall } from '@nativetalk/react-native-call-sdk';
+import { useCall } from '@nativetalkcommunications/react-native-call-sdk';
 
 function CustomCallScreen() {
   const {

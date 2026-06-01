@@ -17,7 +17,7 @@ import {
 import type { CallLogEntry, RegistrationEvent, SipTransport } from './types';
 
 const LINKING_ERROR =
-  `The package '@nativetalk/react-native-call-sdk' doesn't seem to be linked. Make sure:\n\n` +
+  `The package '@nativetalkcommunications/react-native-call-sdk' doesn't seem to be linked. Make sure:\n\n` +
   `- you rebuilt the app after installing the package\n` +
   `- you are not using Expo Go (use a dev client or bare workflow)\n` +
   `- (iOS) you ran 'pod install' inside the ios/ directory\n`;

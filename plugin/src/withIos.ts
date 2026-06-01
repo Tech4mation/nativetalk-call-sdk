@@ -33,7 +33,7 @@ export const withIosPodfile: ConfigPlugin = (config) => {
         // Point to the linphonesw-pod bundled inside the SDK npm package.
         // The xcframeworks are downloaded automatically by its prepare_command
         // on first pod install — no SPM step required.
-        const podPath = '../node_modules/@nativetalk/react-native-call-sdk/linphonesw-pod';
+        const podPath = '../node_modules/@nativetalkcommunications/react-native-call-sdk/linphonesw-pod';
         contents = contents.replace(
           /(use_native_modules![^\n]*)/,
           `$1\n  pod 'linphonesw', :path => '${podPath}'`

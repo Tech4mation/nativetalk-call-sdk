@@ -110,7 +110,7 @@ func pushRegistry(_ registry: PKPushRegistry,
 Alternatively, from your JS layer:
 
 ```ts
-import { CallEngine } from '@nativetalk/react-native-call-sdk';
+import { CallEngine } from '@nativetalkcommunications/react-native-call-sdk';
 CallEngine.registerVoipToken(hex);
 ```
 

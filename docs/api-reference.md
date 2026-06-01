@@ -1,6 +1,6 @@
 # API reference
 
-The complete public surface of `@nativetalk/react-native-call-sdk`.
+The complete public surface of `@nativetalkcommunications/react-native-call-sdk`.
 
 ## Components
 
@@ -239,7 +239,7 @@ Android, or wiring up `registerVoipToken(hex)` from a VoIP push handler — use
 `CallEngine`.
 
 ```ts
-import { CallEngine } from '@nativetalk/react-native-call-sdk';
+import { CallEngine } from '@nativetalkcommunications/react-native-call-sdk';
 
 CallEngine.init();
 CallEngine.register({ username, password, domain });
@@ -263,7 +263,7 @@ with native events automatically; `CallEngine` does not.
 For specialised needs you can subscribe to the raw event stream:
 
 ```ts
-import { callEvents } from '@nativetalk/react-native-call-sdk';
+import { callEvents } from '@nativetalkcommunications/react-native-call-sdk';
 
 const sub = callEvents.addListener('RegistrationChanged', (e) => …);
 sub.remove();

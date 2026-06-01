@@ -8,8 +8,8 @@ A working softphone in ~50 lines.
 // App.tsx
 import React from 'react';
 import { SafeAreaView, Text, View } from 'react-native';
-import { CallProvider, useCall } from '@nativetalk/react-native-call-sdk';
-import { Dialer } from '@nativetalk/react-native-call-sdk/ui';
+import { CallProvider, useCall } from '@nativetalkcommunications/react-native-call-sdk';
+import { Dialer } from '@nativetalkcommunications/react-native-call-sdk/ui';
 
 const sip = {
   username: '100',
@@ -76,7 +76,7 @@ function CallShell({ children }) {
 Then in your `IncomingCall` screen:
 
 ```tsx
-import { IncomingCallView } from '@nativetalk/react-native-call-sdk/ui';
+import { IncomingCallView } from '@nativetalkcommunications/react-native-call-sdk/ui';
 import { useNavigation } from '@react-navigation/native';
 
 export function IncomingCallScreen() {
@@ -94,7 +94,7 @@ export function IncomingCallScreen() {
 And the in-call screen:
 
 ```tsx
-import { OutgoingCallView } from '@nativetalk/react-native-call-sdk/ui';
+import { OutgoingCallView } from '@nativetalkcommunications/react-native-call-sdk/ui';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 export function InCallScreen() {
@@ -117,7 +117,7 @@ If you want a fully custom UI, ignore the bundled components and just use
 `useCall()`:
 
 ```tsx
-import { useCall } from '@nativetalk/react-native-call-sdk';
+import { useCall } from '@nativetalkcommunications/react-native-call-sdk';
 
 function MyDialer() {
   const { dial, callStatus, hangup } = useCall();

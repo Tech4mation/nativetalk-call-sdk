@@ -1,4 +1,4 @@
-# @nativetalk/react-native-call-sdk
+# @nativetalkcommunications/react-native-call-sdk
 
 > Plug-and-play SIP / VoIP calling for React Native, powered by [Linphone](https://www.linphone.org/).
 >
@@ -34,9 +34,9 @@
 ## Installation
 
 ```bash
-npm install @nativetalk/react-native-call-sdk
+npm install @nativetalkcommunications/react-native-call-sdk
 # or
-yarn add @nativetalk/react-native-call-sdk
+yarn add @nativetalkcommunications/react-native-call-sdk
 ```
 
 ---
@@ -55,7 +55,7 @@ If your app uses Expo, the config plugin handles all native configuration automa
 {
   "expo": {
     "plugins": [
-      "@nativetalk/react-native-call-sdk"
+      "@nativetalkcommunications/react-native-call-sdk"
     ]
   }
 }
@@ -85,7 +85,7 @@ Use this when installing via `npm install file:../nativetalk-call-sdk` during SD
 {
   "expo": {
     "plugins": [
-      "@nativetalk/react-native-call-sdk"
+      "@nativetalkcommunications/react-native-call-sdk"
     ]
   }
 }
@@ -107,7 +107,7 @@ const sdkConfig = {
   resolver: {
     unstable_enableSymlinks: true,
     extraNodeModules: {
-      '@nativetalk/react-native-call-sdk': sdkPath,
+      '@nativetalkcommunications/react-native-call-sdk': sdkPath,
       'react': path.resolve(__dirname, 'node_modules/react'),
       'react-native': path.resolve(__dirname, 'node_modules/react-native'),
     },
@@ -147,7 +147,7 @@ Same as the npm install path — the plugin configures Android and iOS automatic
 {
   "expo": {
     "plugins": [
-      ["@nativetalk/react-native-call-sdk", {
+      ["@nativetalkcommunications/react-native-call-sdk", {
         "microphonePermission": "This app needs microphone access for voice calls."
       }]
     ]
@@ -180,7 +180,7 @@ const sdkConfig = {
   resolver: {
     unstable_enableSymlinks: true,
     extraNodeModules: {
-      '@nativetalk/react-native-call-sdk': sdkPath,
+      '@nativetalkcommunications/react-native-call-sdk': sdkPath,
       'react': path.resolve(__dirname, 'node_modules/react'),
       'react-native': path.resolve(__dirname, 'node_modules/react-native'),
     },
@@ -279,7 +279,7 @@ No `MainApplication` edits needed — the SDK autolinks.
 `RECORD_AUDIO` must be granted before the first call. The provider handles this automatically when `requestMicPermission={true}` (the default). To request it manually:
 
 ```ts
-import { CallEngine } from '@nativetalk/react-native-call-sdk';
+import { CallEngine } from '@nativetalkcommunications/react-native-call-sdk';
 await CallEngine.requestMicPermission(); // Android only, no-op on iOS
 ```
 
@@ -303,7 +303,7 @@ The SDK bundles a self-contained `linphonesw-pod` inside the npm package. Add on
 target 'YourApp' do
   config = use_native_modules!
 
-  pod 'linphonesw', :path => '../node_modules/@nativetalk/react-native-call-sdk/linphonesw-pod'
+  pod 'linphonesw', :path => '../node_modules/@nativetalkcommunications/react-native-call-sdk/linphonesw-pod'
 
   # ... rest of Podfile
 end
@@ -359,8 +359,8 @@ Without VoIP push, inbound calls only arrive when the SIP socket is already open
 ```tsx
 import React, { useState } from 'react';
 import { Alert } from 'react-native';
-import { CallProvider, useCall } from '@nativetalk/react-native-call-sdk';
-import { Dialer } from '@nativetalk/react-native-call-sdk/ui';
+import { CallProvider, useCall } from '@nativetalkcommunications/react-native-call-sdk';
+import { Dialer } from '@nativetalkcommunications/react-native-call-sdk/ui';
 
 const sip = {
   username: '100',
@@ -425,7 +425,7 @@ function CallControls() {
 | `PlatformConstants could not be found` | New Architecture enabled but SDK uses Old Arch | Set `newArchEnabled=false` in `gradle.properties`, uninstall APK, clean rebuild |
 | `TurboModuleRegistry … was not found` | Duplicate react-native in SDK node_modules | Delete `nativetalk-call-sdk/node_modules/react` and `.../react-native` |
 | `Unable to load script` | Metro not running after clean build | Start Metro separately (`npx react-native start`), then run the app |
-| `No podspec found for linphonesw` | Podfile missing the `pod 'linphonesw'` line | Add `pod 'linphonesw', :path => '../node_modules/@nativetalk/react-native-call-sdk/linphonesw-pod'` to your Podfile |
+| `No podspec found for linphonesw` | Podfile missing the `pod 'linphonesw'` line | Add `pod 'linphonesw', :path => '../node_modules/@nativetalkcommunications/react-native-call-sdk/linphonesw-pod'` to your Podfile |
 | `'jni.h' file not found` | Linphone xcframeworks embedded directly in NativetalkCallSdk module | Ensure linphonesw is a separate pod — do not vendor the xcframeworks directly in NativetalkCallSdk |
 | Inbound calls not received (Android emulator) | Emulator NAT — SIP server can't reach `10.0.2.15` | Test on a real Android device |
 | Inbound calls not received (iOS) | App backgrounded without VoIP push | Wire up CallKit + PushKit; see `docs/push-notifications.md` |
@@ -451,7 +451,7 @@ function CallControls() {
 
 ```ts
 // Main provider + hook
-import { CallProvider, useCall } from '@nativetalk/react-native-call-sdk';
+import { CallProvider, useCall } from '@nativetalkcommunications/react-native-call-sdk';
 
 // Types
 import type {
@@ -460,7 +460,7 @@ import type {
   IncomingCallInfo, RegistrationEvent, RegistrationState,
   DeclineReason,
   CallProviderProps, CallProviderEvents,
-} from '@nativetalk/react-native-call-sdk';
+} from '@nativetalkcommunications/react-native-call-sdk';
 
 // Helpers
 import {
@@ -470,10 +470,10 @@ import {
   sanitizeDial,          // strips non-dial chars
   formatTenantDomain,    // strips http(s):// and trailing /
   destinationToSipUri,   // "100" + "sip.example.com" → "sip:100@sip.example.com"
-} from '@nativetalk/react-native-call-sdk';
+} from '@nativetalkcommunications/react-native-call-sdk';
 
 // Escape hatch: drive the native module directly (e.g. from headless tasks)
-import { CallEngine } from '@nativetalk/react-native-call-sdk';
+import { CallEngine } from '@nativetalkcommunications/react-native-call-sdk';
 
 // Optional UI
 import {
@@ -484,7 +484,7 @@ import {
   defaultTheme,
   mergeTheme,
   type CallTheme,
-} from '@nativetalk/react-native-call-sdk/ui';
+} from '@nativetalkcommunications/react-native-call-sdk/ui';
 ```
 
 ---

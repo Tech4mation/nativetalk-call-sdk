@@ -1,6 +1,6 @@
 // Metro config for the example app.
 //
-// We tell Metro to resolve `@nativetalk/react-native-call-sdk` from the
+// We tell Metro to resolve `@nativetalkcommunications/react-native-call-sdk` from the
 // sibling SDK source directory so changes to `src/` show up without a publish
 // step. This is only useful for the example — real consumers install the
 // package from npm.
@@ -22,7 +22,7 @@ module.exports = {
       {},
       {
         get: (target, name) => {
-          if (name === '@nativetalk/react-native-call-sdk') return sdkRoot;
+          if (name === '@nativetalkcommunications/react-native-call-sdk') return sdkRoot;
           return path.join(__dirname, `node_modules/${name}`);
         },
       }

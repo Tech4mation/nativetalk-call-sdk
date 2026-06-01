@@ -1,7 +1,7 @@
 # Call SDK example app
 
 A bare-bones React Native app that uses every public surface of
-`@nativetalk/react-native-call-sdk`:
+`@nativetalkcommunications/react-native-call-sdk`:
 
 - A credentials form that builds a `SipConfig`.
 - Mounts `<CallProvider>` with the entered credentials.
@@ -10,7 +10,7 @@ A bare-bones React Native app that uses every public surface of
 
 ## Running
 
-This example uses `npm link`-style local resolution (`"@nativetalk/react-native-call-sdk": "link:.."`)
+This example uses `npm link`-style local resolution (`"@nativetalkcommunications/react-native-call-sdk": "link:.."`)
 so you can iterate on the SDK and the example side by side.
 
 ```bash
