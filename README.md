@@ -13,7 +13,7 @@
 | Feature | Notes |
 |---|---|
 | **Plug-and-play** | One provider, one hook. No coupling to your auth, navigation, or HTTP client. |
-| **Cross-platform** | Android (Linphone SDK 5.x) and iOS (linphonesw + CallKit-ready). |
+| **Cross-platform** | Android (Linphone SDK 5.x) and iOS (Linphone 5.x + CallKit-ready). |
 | **Backgrounded calls** | Android foreground service keeps the registration warm. iOS supports VoIP push. |
 | **Bundled UI** | Optional `<Dialer />`, `<IncomingCallView />`, `<OutgoingCallView />`. Use them or roll your own. |
 | **Typed** | First-class TypeScript types throughout. |
@@ -26,8 +26,8 @@
 - React Native ≥ 0.73
 - iOS ≥ 13.0
 - Android `minSdkVersion` ≥ 24 (Android 7.0)
-- Linphone SDK 5.4.x (Android pulled automatically via Maven; iOS via Swift Package Manager)
-- **New Architecture must be disabled on Android** — set `newArchEnabled=false` in `android/gradle.properties`. TurboModules support is planned.
+- Linphone SDK 5.4.x (Android pulled automatically via Maven; iOS xcframeworks downloaded automatically on first `pod install`)
+- **React Native < 0.82:** set `newArchEnabled=false` in `android/gradle.properties`. React Native ≥ 0.82 runs New Architecture by default and the SDK works via the interop layer — the flag is not needed.
 
 ---
 
@@ -45,7 +45,11 @@ yarn add @nativetalk/react-native-call-sdk
 
 If your app uses Expo, the config plugin handles all native configuration automatically.
 
-### 1. Add the plugin to `app.json`
+---
+
+### Installing from npm
+
+#### 1. Add the plugin to `app.json`
 
 ```json
 {
@@ -57,9 +61,39 @@ If your app uses Expo, the config plugin handles all native configuration automa
 }
 ```
 
-### 2. Local installs only — update Metro config
+#### 2. Run prebuild
 
-**Skip this step for published npm installs.** If installing from a local path (e.g. `"file:../nativetalk-call-sdk"`), add the following to your `metro.config.js`. Expo projects do not create this file by default — create it at the project root if it doesn't exist:
+```bash
+npx expo prebuild
+```
+
+This automatically configures:
+- **Android** — adds the Linphone Maven repository to `android/build.gradle`
+- **iOS** — adds `NSMicrophoneUsageDescription` and `UIBackgroundModes` to `Info.plist`, and adds the `pod 'linphonesw'` line to the `Podfile`
+
+Prebuild also runs `pod install` automatically. On the first run, the linphonesw pod downloads the Linphone xcframeworks (~90 seconds, one-time per machine). No SPM step, no manual setup.
+
+---
+
+### Installing from a local path (development only)
+
+Use this when installing via `npm install file:../nativetalk-call-sdk` during SDK development.
+
+#### 1. Add the plugin to `app.json`
+
+```json
+{
+  "expo": {
+    "plugins": [
+      "@nativetalk/react-native-call-sdk"
+    ]
+  }
+}
+```
+
+#### 2. Create `metro.config.js`
+
+Expo projects do not create this file by default. Create it at the project root:
 
 ```js
 const { getDefaultConfig } = require('expo/metro-config');
@@ -87,9 +121,9 @@ const sdkConfig = {
 module.exports = mergeConfig(getDefaultConfig(__dirname), sdkConfig);
 ```
 
-### 3. Local installs only — remove duplicate react/react-native
+#### 3. Remove duplicate react/react-native from the SDK
 
-**Skip this step for published npm installs.** Check if duplicates exist in the SDK directory and delete them:
+Check if duplicates exist and delete them:
 
 ```bash
 ls ../nativetalk-call-sdk/node_modules | grep react   # check first
@@ -97,17 +131,15 @@ rm -rf ../nativetalk-call-sdk/node_modules/react
 rm -rf ../nativetalk-call-sdk/node_modules/react-native
 ```
 
-### 4. Run prebuild
+#### 4. Run prebuild
 
 ```bash
 npx expo prebuild
 ```
 
-This automatically configures:
-- **Android** — adds the Linphone Maven repository to `android/build.gradle`
-- **iOS** — adds `NSMicrophoneUsageDescription` and `UIBackgroundModes` to `Info.plist`, and adds the `pod 'linphonesw'` line to the `Podfile`
+Same as the npm install path — the plugin configures Android and iOS automatically.
 
-Prebuild also runs `pod install` automatically. On the first run, the linphonesw pod downloads the Linphone xcframeworks (~90 seconds, one-time per machine).
+---
 
 ### Plugin options
 
