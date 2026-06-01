@@ -1,6 +1,6 @@
 {
   "name": "@nativetalkcommunications/react-native-call-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Plug-and-play SIP/VoIP calling SDK for React Native, powered by Linphone. Provides registration, dial, answer, hold, mute, speaker, DTMF, and call logs — plus optional UI components.",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
