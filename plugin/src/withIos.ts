@@ -36,9 +36,10 @@ export const withIosPodfile: ConfigPlugin<{ linphoneswPodPath?: string }> = (
       let contents = fs.readFileSync(podfilePath, 'utf-8');
 
       if (!contents.includes('linphonesw')) {
-        // Insert after the first `use_native_modules!` call.
+        // Match use_native_modules! plus everything on that line (e.g. arguments),
+        // then insert the pod entry on the next line.
         contents = contents.replace(
-          /(use_native_modules!)/,
+          /(use_native_modules![^\n]*)/,
           `$1\n  pod 'linphonesw', :path => '${linphoneswPodPath}'`
         );
         fs.writeFileSync(podfilePath, contents);
