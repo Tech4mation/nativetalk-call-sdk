@@ -17,14 +17,12 @@ Pod::Spec.new do |s|
   s.requires_arc = true
   s.swift_version = "5.0"
 
-  # React Native peer.
   s.dependency "React-Core"
 
-  # Linphone Swift wrapper.
-  # There is no official CocoaPod; consumers must supply linphonesw themselves.
-  # For local/dev installs, reference a local linphonesw.podspec via the app's
-  # Podfile (see docs/ios-setup.md). For npm distribution, the SDK will ship a
-  # precompiled xcframework (roadmap item) so this dependency disappears.
+  # linphonesw is bundled inside the npm package at linphonesw-pod/.
+  # The Podfile must reference it via:
+  #   pod 'linphonesw', :path => '../node_modules/@nativetalk/react-native-call-sdk/linphonesw-pod'
+  # The config plugin adds this line automatically for Expo users.
   s.dependency "linphonesw"
 
   s.pod_target_xcconfig = {
