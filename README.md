@@ -158,8 +158,9 @@ Same as the npm install path — the plugin configures Android and iOS automatic
 ```tsx
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { CallProvider, useCall } from '@nativetalkcommunications/react-native-call-sdk';
-import { Dialer } from '@nativetalkcommunications/react-native-call-sdk/ui';
+import { Dialer, IncomingCallView, OutgoingCallView } from '@nativetalkcommunications/react-native-call-sdk/ui';
 
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState('100');
@@ -210,16 +211,33 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function DialerWithSignout({ onLogout }) {
-  const { isRegistered } = useCall();
+function CallScreen({ onLogout }) {
+  const { registration, callStatus } = useCall();
+  const isRegistered = registration?.state === 'ok';
 
+  // Show appropriate view based on call state
+  if (callStatus === 'IncomingReceived') {
+    return <IncomingCallView />;
+  }
+
+  if (['OutgoingInit', 'OutgoingProgress', 'OutgoingRinging', 'Connected', 'StreamsRunning'].includes(callStatus)) {
+    return <OutgoingCallView />;
+  }
+
+  // Default: show dialer when idle
   return (
     <View style={styles.dialerContainer}>
-      {isRegistered && (
-        <TouchableOpacity style={styles.signoutButton} onPress={onLogout}>
-          <Text style={styles.signoutText}>Sign Out</Text>
-        </TouchableOpacity>
-      )}
+      <SafeAreaView>
+        <View style={styles.statusBar}>
+          <TouchableOpacity onPress={onLogout} style={{ paddingRight: 12 }}>
+            <Text style={styles.backText}>← Back</Text>
+          </TouchableOpacity>
+          <View style={[styles.statusDot, isRegistered ? styles.statusConnected : styles.statusDisconnected]} />
+          <Text style={styles.statusText}>
+            {isRegistered ? 'Connected' : 'Connecting...'}
+          </Text>
+        </View>
+      </SafeAreaView>
       <Dialer />
     </View>
   );
@@ -247,7 +265,7 @@ export default function App() {
       onRegistrationStateChanged={(r) => console.log('SIP:', r.state)}
       onError={(e) => Alert.alert('SDK Error', e.message)}
     >
-      <DialerWithSignout onLogout={handleLogout} />
+      <CallScreen onLogout={handleLogout} />
     </CallProvider>
   );
 }
@@ -260,6 +278,33 @@ const styles = StyleSheet.create({
   },
   dialerContainer: {
     flex: 1,
+  },
+  statusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f5f5f5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+  },
+  statusConnected: {
+    backgroundColor: '#4CAF50',
+  },
+  statusDisconnected: {
+    backgroundColor: '#FF9800',
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+    color: '#333',
   },
   title: {
     fontSize: 24,
@@ -287,17 +332,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  signoutButton: {
-    backgroundColor: '#F44336',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    alignItems: 'center',
-    margin: 12,
-  },
-  signoutText: {
-    color: '#fff',
+  backText: {
     fontSize: 14,
+    fontWeight: '600',
+    color: '#2196F3',
   },
 });
 ```
