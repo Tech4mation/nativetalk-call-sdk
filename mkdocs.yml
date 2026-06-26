@@ -1,0 +1,29 @@
+site_name: Nativetalk Call SDK Documentation
+site_url: https://nativetalk-call-sdk.vercel.app/
+repo_url: https://github.com/Tech4mation/nativetalk-call-sdk
+repo_name: Tech4mation/nativetalk-call-sdk
+theme:
+  name: material
+  palette:
+    scheme: light
+    primary: blue
+    accent: orange
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Installation: installation.md
+  - Configuration: configuration.md
+  - API Reference: api-reference.md
+  - SIP Device API: SIP_DEVICE_API.md
+  - Architecture: architecture.md
+  - Setup:
+    - Android Setup: android-setup.md
+    - iOS Setup: ios-setup.md
+  - UI Components: ui-components.md
+  - Push Notifications: push-notifications.md
+  - Permissions: permissions.md
+  - Troubleshooting: troubleshooting.md
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - md_in_html
