@@ -28,6 +28,7 @@
     "src",
     "lib",
     "ui",
+    "docs",
     "android",
     "!android/build",
     "ios",
