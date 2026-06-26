@@ -1,4 +1,4 @@
 {
-  "buildCommand": "uv pip install mkdocs mkdocs-material && mkdocs build",
+  "buildCommand": "pip install --break-system-packages mkdocs mkdocs-material && mkdocs build",
   "outputDirectory": "site"
 }
