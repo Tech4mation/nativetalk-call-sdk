@@ -3,7 +3,8 @@
 This page is for a team shipping the Nativetalk Call SDK inside **their own
 app, published from their own Apple and Google accounts**.
 
-It covers what you set up, what you send us, and how to check it worked.
+It covers what you set up, how you upload your keys, and how to check it
+worked.
 
 If you publish under Nativetalk's Apple team instead, you need none of this.
 Everything here is about the case where the app is yours.
@@ -22,7 +23,7 @@ high-priority data message, and your app draws its own call screen.
 Both of those have to be signed by the account that owns the app. Apple will
 not accept a push for your app signed by our team, and Firebase will not
 deliver a message to your app from our project. So to ring your handsets, we
-have to send as you, which means you give us a key.
+have to send as you, which means you upload your key to us.
 
 ## The whole job, in order
 
@@ -32,16 +33,18 @@ and your backend, every time someone signs in.
 **Once, by a person on your team**
 
 1. Add two capabilities in Xcode ([Part 1](#part-1-your-xcode-project)).
-2. Make an Apple push key, and send it to us with its Key ID, your Team ID,
-   your app's bundle ID and the key's environment
+2. Make an Apple push key, and upload it with its Key ID, your Team ID, your
+   app's bundle ID and the key's environment
    ([Parts 2](#part-2-the-apple-push-key) and
-   [3](#part-3-sending-it-to-us)). Sandbox while you integrate, Production
+   [3](#part-3-uploading-your-key)). Sandbox while you integrate, Production
    before you ship.
-3. For Android wake-ups, send us a Firebase service account
+3. For Android wake-ups, upload a Firebase service account
    ([Part 4](#part-4-android-and-firebase)).
 
-We keep these and use them for every call to every one of your phones. You do
-not send them again unless you replace the key.
+Each upload is one command with your company API key, and the reply tells you
+straight away whether Apple or Google accepted the key. We keep it and use it
+for every call to every one of your phones. You do not upload it again unless
+you replace the key.
 
 **In your app, every time it starts**
 
@@ -62,14 +65,14 @@ not send them again unless you replace the key.
 Then [check it](#part-5-checking-it-works), and test a real call with the app
 swiped away.
 
-Steps 4 to 7 do not have to wait for us to install your key. Tokens your
+Steps 4 to 7 do not have to wait for your key to be uploaded. Tokens your
 backend sends before then are kept, and start ringing as soon as the key is in.
 
 The bundle ID in step 2 is the only time we need it. Your backend does not send
 it again with each token, because every token for your app is for the same app,
 and we already have it from the key.
 
-## What we need from you
+## What you upload
 
 | Platform | What | Where it comes from |
 |---|---|---|
@@ -80,9 +83,8 @@ and we already have it from the key.
 | iOS | Which environment the key is for | you chose it when you made the key |
 | Android | The service account JSON file | Firebase → Project settings → Service accounts |
 
-These are sent once, by a person, when the key is made. Your app and your
-backend never send them. Read on for how to get each one, and how to send them
-to us.
+These are uploaded once, by a person on your team, when the key is made. Your
+app never sends them. Read on for how to get each one, and how to upload it.
 
 ## Part 1: your Xcode project
 
@@ -144,9 +146,9 @@ key is allowed to talk to, and the two do not overlap.
 - A build you run from Xcode gets a **sandbox** device token.
 - A build from TestFlight or the App Store gets a **production** device token.
 
-So while you are integrating, make a **Sandbox** key and send us that. Before
-you ship, make a **Production** key and send us that one too. We store both,
-and each handset is woken with the one that matches the build it is running.
+So while you are integrating, make a **Sandbox** key and upload that. Before
+you ship, make a **Production** key and upload that one too. We store both, and
+each handset is woken with the one that matches the build it is running.
 
 If only one of them is uploaded, handsets on the other kind of build will not
 ring, and the reason will say so when you check.
@@ -159,28 +161,90 @@ ring, and the reason will say so when you check.
 
 **Apple lets you download the `.p8` once.** If you lose it, you cannot get it
 back. You revoke that key and make a new one. That is not a disaster, it just
-means telling us the new Key ID.
+means uploading the new one.
 
-## Part 3: sending it to us
+## Part 3: uploading your key
+
+You upload the key yourself, with the same company API key your backend uses
+to create SIP devices. It is one command:
+
+```bash
+curl -X PUT https://core.nativetalkcrm.com/api/sip/push-credentials/apns/ \
+  -H "X-API-Key: <your company API key>" \
+  -F key_file=@AuthKey_ABC123DEFG.p8 \
+  -F key_id=ABC123DEFG \
+  -F team_id=TEAM123456 \
+  -F bundle_id=com.yourcompany.yourapp \
+  -F environment=sandbox
+```
+
+- `key_file` is the `.p8` you downloaded, unchanged.
+- `key_id` and `team_id` are the two codes you wrote down in Part 2.
+- `bundle_id` is your app's bundle ID, as Xcode shows it.
+- `environment` is `sandbox` or `production`: the one you picked when you made
+  the key.
+
+When you make your Production key, upload it the same way with
+`environment=production`. Each environment has its own place, so it does not
+replace the Sandbox key. Uploading again for the same environment replaces the
+key that was there.
+
+### What the reply means
+
+We check the key with Apple before we reply, so you know straight away whether
+it works.
+
+| Status | `code` | What it means |
+|---|---|---|
+| `200` | | Apple accepted the key. Your phones can now be woken. |
+| `422` | `NOT_ACCEPTED` | Apple refused the key. `error` says what to fix. The key is saved, but it will not wake phones until you upload a corrected one. |
+| `502` | `NOT_CHECKED` | We could not get a clear answer from Apple. The key is saved. [Check it again](#part-5-checking-it-works) in a few minutes. |
+| `400` | `INVALID_INPUT` | A field is missing or not in the right form. `details` names it. Nothing was saved. |
+| `400` | `KEY_UNREADABLE` | The file is not a key we can read. Upload the `.p8` exactly as Apple gave it. Nothing was saved. |
+| `400` | `NOT_AVAILABLE` | Your company's phone system does not support this. Contact us. |
+| `401` | | The API key is missing or wrong. |
+
+A `200` looks like this:
+
+```json
+{
+  "success": true,
+  "data": {
+    "verified": true,
+    "saved": true,
+    "message": "Apple accepted this key. Your app's phones can now be woken for calls.",
+    "credential": {
+      "provider": "apns",
+      "key_id": "ABC123DEFG",
+      "team_id": "TEAM123456",
+      "bundle_id": "com.yourcompany.yourapp",
+      "topic": "com.yourcompany.yourapp.voip",
+      "environment": "sandbox",
+      "verified": true,
+      "last_verified_at": "2026-10-16T09:12:00.000Z",
+      "last_check": "accepted by Apple for topic com.yourcompany.yourapp.voip on sandbox",
+      "updated_at": "2026-10-16T09:12:00.000Z"
+    }
+  }
+}
+```
+
+The key itself is never in a reply. Every field and every other reply is in
+[SIP Device API](SIP_DEVICE_API.md), sections 9 to 13.
+
+### Keep the key in one place on your side too
 
 The `.p8` is a signing key. Anyone holding it can send pushes to the apps it
 covers, until it is revoked.
 
-**Please do not send it over email, WhatsApp, Slack or a ticket.** Those keep a
-copy, in several places, for years.
+Upload it from the computer you downloaded it to. **Please do not pass it
+around your own team over email, WhatsApp, Slack or a ticket.** Those keep a
+copy, in several places, for years. If a key has already been through a chat
+window, revoke it at Apple and make a new one. That takes two minutes, and it
+is the only way to undo it.
 
-Instead, either:
-
-- Put it in a one-time secret link, and send us the link. A service such as
-  [onetimesecret.com](https://onetimesecret.com) is fine. Send the password for
-  it, if there is one, by a different route than the link.
-- Or put it in an encrypted archive, and give us the password by voice.
-
-If a key has already been through a chat window, revoke it at Apple and make a
-new one. That takes two minutes and it is the only way to undo it.
-
-Send the Key ID, Team ID, bundle ID and environment however you like. None of
-those are secret on their own.
+There is no need to send the key to anyone at NativeTalk either. The upload is
+the only way in.
 
 ### What we do with it
 
@@ -199,20 +263,44 @@ In the [Firebase console](https://console.firebase.google.com), open your
 project, then **Project settings → Service accounts → Generate new private
 key**. That downloads a JSON file.
 
-Send us the whole file, by the same careful route as the `.p8`. It carries the
-project ID and the service-account address alongside the key, so there is
-nothing to copy out by hand.
+Upload the whole file. It carries the project ID and the service-account
+address alongside the key, so there is nothing to copy out by hand:
+
+```bash
+curl -X PUT https://core.nativetalkcrm.com/api/sip/push-credentials/fcm/ \
+  -H "X-API-Key: <your company API key>" \
+  -F service_account_file=@your-project-firebase-adminsdk.json
+```
+
+The reply works the same way as the Apple one. `200` means Google accepted it,
+and `422` says what to fix. The usual mistake is uploading
+`google-services.json`, which is your app's Firebase settings, not a key. The
+reply says so if you do.
+
+This file is a key too, so keep it in one place, the same as the `.p8`.
 
 There is no sandbox and production split on this side. One file covers every
 build.
 
 ## Part 5: checking it works
 
-Once we have uploaded your credentials, we check them against Apple
-immediately, so a wrong Key ID is something we can tell you about while we are
-still on the call. The check sends one push to a device token that belongs to
-nobody. Apple checks the signature and the app before it looks for the handset,
-so its refusal tells us exactly which part is wrong:
+Every upload is checked with Apple or Google before we reply. To check again
+later, for example after changing anything on Apple's Keys page:
+
+```bash
+curl -X POST https://core.nativetalkcrm.com/api/sip/push-credentials/apns/verify/ \
+  -H "X-API-Key: <your company API key>"
+```
+
+This checks every environment you have uploaded, and says for each one whether
+it still works. Use `fcm` in place of `apns` for the Firebase file. To see what
+is on file at any time, without checking, use
+`GET /api/sip/push-credentials/`.
+
+The check sends one push to a device token that belongs to nobody. Apple checks
+the signature and the app before it looks for the handset, so its refusal says
+exactly which part is wrong. The reply puts it in plain words, and `last_check`
+keeps what Apple said:
 
 | What Apple says | What it means |
 |---|---|
@@ -220,10 +308,10 @@ so its refusal tells us exactly which part is wrong:
 | `InvalidProviderToken` | The key does not match the Key ID or the Team ID. |
 | `TopicDisallowed` | The key is real, but it is not allowed to push to this app. Usually the topic-specific key was restricted to a different App ID. |
 | `BadTopic` | The bundle ID is not one Apple recognises. |
+| `BadEnvironmentKeyInToken` | The key was made for the other environment. Upload it again with the right `environment`. |
 
-We can read which key is meant to be waking your phones, and when it was last
-proven to work, at any time, so ask us. If your app signs users in to
-NativeTalk, it can read the same thing itself from `GET /push/status`:
+If your app signs users in to NativeTalk, the app can read the same thing
+itself from `GET /push/status`:
 
 ```json
 {
@@ -419,12 +507,12 @@ reinstall, and an old token is a phone that will never ring.
 - [ ] `NSMicrophoneUsageDescription` in Info.plist
 - [ ] A topic-specific APNs key, restricted to your app
 - [ ] Key ID, Team ID, bundle ID and environment noted down
-- [ ] `.p8` sent to us by one-time link, not by chat or email
-- [ ] Firebase service account JSON sent, if you want Android wake-ups
+- [ ] `.p8` uploaded with a `200` reply, and not passed around by chat or email
+- [ ] Firebase service account JSON uploaded, if you want Android wake-ups
 - [ ] Your backend registers each handset's token on every sign-in, with the right `environment`
 - [ ] Your backend removes the token on sign-out
 - [ ] `reportNewIncomingCall` called on every path through the push handler
-- [ ] We have confirmed your key shows `signedAs: "tenant"` and a recent `verifiedAt`
+- [ ] `GET /api/sip/push-credentials/` shows `"verified": true` for each environment you ship
 - [ ] A real call to a real phone with the app swiped away
 
 ## If a phone still does not ring
@@ -439,15 +527,16 @@ Work down this list. It is in the order faults actually turn up.
    never reached us, there is nothing to wake. That is Part 8, and not a push
    problem at all. Check the app sends its token on every launch, and that your
    backend passes it on for the right SIP device.
-4. **Is your key the one signing?** Ask us, or read `GET /push/status` if your
-   app signs in to NativeTalk. If it says `platform`, your key is not uploaded
-   and we are signing as ourselves, which Apple will refuse.
+4. **Is your key on file?** `GET /api/sip/push-credentials/` lists it. If the
+   list is empty, nothing was uploaded and we are signing as ourselves, which
+   Apple will refuse.
 5. **Is there an entry for this build's environment?** A sandbox build with only
    a production key uploaded cannot be woken.
 6. **Has the app ever been force quit by iOS?** If your push handler ever
    finished without reporting a call, that handset has stopped receiving VoIP
    pushes. Delete the app, reinstall it, and fix the handler. Nothing else
    brings it back.
-7. **Ask us to re-check the key.** A key can stop working without anyone
-   touching the app: revoked at Apple, or the App ID removed from its
-   restriction. One request tells us, without placing a call.
+7. **Check the key again** with `POST /api/sip/push-credentials/apns/verify/`.
+   A key can stop working without anyone touching the app: revoked at Apple, or
+   the App ID removed from its restriction. One request tells you, without
+   placing a call.

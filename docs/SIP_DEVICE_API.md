@@ -526,7 +526,8 @@ Call it every time the app starts, and whenever the operating system issues a
 new token. It is safe to repeat. We keep one phone per SIP device per platform,
 so a new token replaces the old one.
 
-Before an iPhone can be woken, we also need your app's push key. See
+Before an iPhone can be woken, your app's push key has to be uploaded too. See
+[section 9](#9-upload-your-apple-push-key) and
 [VoIP Push Setup](voip-push-setup.md).
 
 **Headers**:
@@ -551,7 +552,7 @@ Content-Type: application/json
 - `provider` *(optional, string)* — `apns` or `fcm`. Worked out from
   `platform`, so you only need to send one of the two.
 - `bundle_id` *(optional, string)* — Leave it out. We push to the app named on
-  the push key you sent us. Send it only if that key covers more than one of
+  the push key you uploaded. Send it only if that key covers more than one of
   your apps, and then it must be the real bundle ID of the app on this phone.
   `bundleId` is also accepted.
 - `environment` *(optional, string)* — `sandbox` for a build signed with a
@@ -627,6 +628,241 @@ it is already in the state you asked for.
 
 ---
 
+### 9. Upload Your Apple Push Key
+
+**Endpoint**: `PUT /api/sip/push-credentials/apns/`
+
+**Description**: Give us the Apple push key for your app, so we can wake your
+iPhones for calls. Only needed if your app is published from your own Apple
+account. How to make the key is in [VoIP Push Setup](voip-push-setup.md).
+
+We check the key with Apple before we reply. Upload once per environment: a
+Sandbox key while you integrate, and a Production key before you ship. Uploading
+again for the same environment replaces the key that was there. `POST` works the
+same as `PUT`. `ios` and `apple` work in place of `apns` in the path.
+
+**Headers**:
+```
+X-API-Key: your-api-key-here
+Content-Type: multipart/form-data
+```
+
+**Request** (form fields):
+```bash
+curl -X PUT https://core.nativetalkcrm.com/api/sip/push-credentials/apns/ \
+  -H "X-API-Key: your-api-key-here" \
+  -F key_file=@AuthKey_ABC123DEFG.p8 \
+  -F key_id=ABC123DEFG \
+  -F team_id=TEAM123456 \
+  -F bundle_id=com.yourcompany.yourapp \
+  -F environment=sandbox
+```
+
+**Field Details**:
+- `key_file` *(required, file)* — The `.p8` file from Apple, unchanged. You can
+  send its text as `private_key` in a JSON body instead.
+- `key_id` *(required, string)* — The 10-character Key ID shown next to the key
+  on Apple's Keys page.
+- `team_id` *(required, string)* — Your 10-character Team ID, from the
+  Membership page of your Apple Developer account.
+- `bundle_id` *(required, string)* — Your app's bundle ID, as Xcode shows it.
+  If you send the VoIP topic (ending `.voip`), we take that ending off.
+- `environment` *(required, string)* — `sandbox` or `production`: the Apple
+  environment you picked when you made the key.
+
+**Example Response** (200 OK):
+```json
+{
+  "success": true,
+  "data": {
+    "verified": true,
+    "saved": true,
+    "message": "Apple accepted this key. Your app's phones can now be woken for calls.",
+    "credential": {
+      "provider": "apns",
+      "key_id": "ABC123DEFG",
+      "team_id": "TEAM123456",
+      "bundle_id": "com.yourcompany.yourapp",
+      "topic": "com.yourcompany.yourapp.voip",
+      "environment": "sandbox",
+      "verified": true,
+      "last_verified_at": "2026-10-16T09:12:00.000Z",
+      "last_check": "accepted by Apple for topic com.yourcompany.yourapp.voip on sandbox",
+      "updated_at": "2026-10-16T09:12:00.000Z"
+    }
+  }
+}
+```
+
+The key itself is never in a reply, here or anywhere else.
+
+**Error Responses**:
+
+*422 Unprocessable Entity* — `NOT_ACCEPTED`: Apple refused the key. `error`
+says what to fix. The key is saved, so you can see it on file, but it will not
+wake phones until you upload a corrected one.
+```json
+{
+  "success": false,
+  "error": "Apple says this key does not go with this Key ID and Team ID. Check that key_id is the Key ID shown next to this key on Apple's Keys page, that team_id is your Team ID from the Membership page, and that the file is the one you downloaded for that key.",
+  "code": "NOT_ACCEPTED",
+  "data": {
+    "verified": false,
+    "saved": true,
+    "credential": { "provider": "apns", "key_id": "ABC123DEFG", "verified": false }
+  }
+}
+```
+
+*502 Bad Gateway* — `NOT_CHECKED`: we could not get a clear answer from Apple.
+The key is saved. Check it again in a few minutes
+([section 12](#12-check-a-key-again)).
+
+*400 Bad Request* — Nothing was saved. One of:
+- `INVALID_INPUT`: a field is missing or not in the right form. `details`
+  names it, for example a Team ID sent as the Key ID, or a `.p12` file sent
+  instead of the `.p8`.
+- `KEY_UNREADABLE`: the file is not a key we can read.
+- `NOT_AVAILABLE`: your company's phone system does not support this. Contact
+  us.
+
+*404 Not Found* — `UNKNOWN_PROVIDER`: the path does not end in `apns` or
+`fcm`.
+
+*502 Bad Gateway* — `PHONE_SYSTEM_UNREACHABLE`: we could not reach the phone
+system. Nothing was saved. Try again in a minute.
+
+*503 Service Unavailable* — `NOT_READY`: key uploads are not switched on yet
+on our side. Contact us.
+
+---
+
+### 10. Upload Your Firebase Service Account
+
+**Endpoint**: `PUT /api/sip/push-credentials/fcm/`
+
+**Description**: Give us the Firebase service account for your app, so we can
+wake your Android phones after Android has put the app to sleep. `android` and
+`firebase` work in place of `fcm` in the path.
+
+**Request** (form fields):
+```bash
+curl -X PUT https://core.nativetalkcrm.com/api/sip/push-credentials/fcm/ \
+  -H "X-API-Key: your-api-key-here" \
+  -F service_account_file=@your-project-firebase-adminsdk.json
+```
+
+**Field Details**:
+- `service_account_file` *(required, file)* — The JSON file from Firebase:
+  Project settings, then Service accounts, then Generate new private key. You
+  can send its contents as `service_account_json` in a JSON body instead.
+
+There is no `environment`. One file covers every build.
+
+**Responses**: the same as [section 9](#9-upload-your-apple-push-key), with
+Google in place of Apple and `project_id` and `client_email` in place of the
+Apple fields. Uploading `google-services.json` by mistake gets a `400` that
+says it is the wrong file.
+
+---
+
+### 11. See Which Keys Are on File
+
+**Endpoint**: `GET /api/sip/push-credentials/`
+
+**Description**: What push keys your company has uploaded, and whether each one
+last worked. It shows which key, never the key itself.
+
+**Example Response** (200 OK):
+```json
+{
+  "success": true,
+  "data": {
+    "uses_own_keys": true,
+    "credentials": [
+      {
+        "provider": "apns",
+        "key_id": "ABC123DEFG",
+        "team_id": "TEAM123456",
+        "bundle_id": "com.yourcompany.yourapp",
+        "topic": "com.yourcompany.yourapp.voip",
+        "environment": "sandbox",
+        "verified": true,
+        "last_verified_at": "2026-10-16T09:12:00.000Z",
+        "last_check": "accepted by Apple for topic com.yourcompany.yourapp.voip on sandbox",
+        "updated_at": "2026-10-16T09:12:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+`verified` is `true` only if the last check passed. An empty list means nothing
+is uploaded, and your iPhones cannot be woken.
+
+---
+
+### 12. Check a Key Again
+
+**Endpoint**: `POST /api/sip/push-credentials/{provider}/verify/`
+
+**Description**: Ask Apple or Google again whether the key on file still works.
+A key can stop working with nobody touching your app: revoked at Apple, or your
+app taken off a key that is limited to certain apps. `{provider}` is `apns` or
+`fcm`.
+
+Every environment you have uploaded is checked.
+
+**Example Response** (200 OK):
+```json
+{
+  "success": true,
+  "data": {
+    "verified": true,
+    "checked": [
+      {
+        "environment": "sandbox",
+        "verified": true,
+        "message": "Apple accepted this key. Your app's phones can now be woken for calls.",
+        "result": "accepted by Apple for topic com.yourcompany.yourapp.voip on sandbox"
+      }
+    ]
+  }
+}
+```
+
+If any environment fails, the reply is `422` with `NOT_ACCEPTED` (or `502`
+with `NOT_CHECKED`), `error` says what to fix, and `checked` shows each one.
+`404` with `NOTHING_ON_FILE` means there is no key to check yet.
+
+---
+
+### 13. Remove a Key
+
+**Endpoint**: `DELETE /api/sip/push-credentials/{provider}/`
+
+**Description**: Remove an uploaded key, for example when your app is
+withdrawn. Until you upload a new one, calls cannot wake your phones.
+
+Both Apple environments are removed unless you name one:
+`DELETE /api/sip/push-credentials/apns/?environment=sandbox`
+
+**Example Response** (200 OK):
+```json
+{
+  "success": true,
+  "data": {
+    "removed": 1,
+    "environments": ["sandbox"],
+    "message": "Removed. Until you upload a new key, calls cannot wake your app's phones."
+  }
+}
+```
+
+Removing a key that is not there also returns `200`, with `"removed": 0`.
+
+---
+
 ## Rate Limiting
 
 The API enforces rate limits per company to prevent abuse:
@@ -687,7 +923,9 @@ push to your app
   `POST /api/sip/devices/{device_id}/push-token/` with it. The response must say
   `"registered": true`.
 - For iPhones, check the `environment` you send matches the build on the phone.
-- Work through [VoIP Push Setup](voip-push-setup.md), which covers the key we
-  need from you before any iPhone can be woken.
+- Check your push key is on file and verified:
+  `GET /api/sip/push-credentials/` ([section 11](#11-see-which-keys-are-on-file)).
+- Work through [VoIP Push Setup](voip-push-setup.md), which covers the key you
+  upload before any iPhone can be woken.
 
 ---
