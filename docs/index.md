@@ -27,6 +27,7 @@ Then follow the [Quickstart Guide](quickstart.md).
 - **[SIP Device API](SIP_DEVICE_API.md)** — Manage SIP devices programmatically
 - **[API Reference](api-reference.md)** — Complete SDK API reference
 - **[UI Components](ui-components.md)** — Pre-built components guide
+- **[VoIP Push Setup](voip-push-setup.md)** — Waking a phone for an incoming call, when the app is published from your own Apple and Google accounts
 
 ## Integration
 
