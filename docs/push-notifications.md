@@ -118,10 +118,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate,
     let token = pushCredentials.token.map { String(format: "%02.2hhx", $0) }.joined()
     UserDefaults.standard.set(token, forKey: "voip_token")
 
-    // Also send this token to the call server, with the extension this phone
-    // answers on, or nothing will ever be pushed to it. See
-    // voip-push-setup.md, "Registering a handset". iOS issues a new token
-    // after a reinstall, so send it every time this fires rather than once.
+    // Also send this token to your backend, which registers it with us for
+    // the SIP device this person signs in with, or nothing will ever be pushed
+    // to it. See voip-push-setup.md, "Registering a handset". iOS issues a new
+    // token after a reinstall, so send it every time this fires rather than once.
 
     // Hand the token to the SDK so it can register it with the SIP server.
     NotificationCenter.default.post(

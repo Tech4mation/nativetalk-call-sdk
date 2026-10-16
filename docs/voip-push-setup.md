@@ -174,8 +174,9 @@ so its refusal tells us exactly which part is wrong:
 | `TopicDisallowed` | The key is real, but it is not allowed to push to this app. Usually the topic-specific key was restricted to a different App ID. |
 | `BadTopic` | The bundle ID is not one Apple recognises. |
 
-From inside the app, `GET /push/status` reports which key is meant to be waking
-this tenant's phones, and when it was last proven to work:
+We can read which key is meant to be waking your phones, and when it was last
+proven to work, at any time, so ask us. If your app signs users in to
+NativeTalk, it can read the same thing itself from `GET /push/status`:
 
 ```json
 {
@@ -282,8 +283,39 @@ A push needs somewhere to go. Every handset has to tell us its token and the
 extension it answers on, or there is nothing to send a wake-up to. This is the
 step most often missing when the key is right and the phone still does not ring.
 
-**From the app, with the user signed in.** If the person using your app signs in
-with their NativeTalk account, the app posts its own token:
+**From your backend, if your users sign in to your own system.** This is the
+usual case for a company with its own app. Nobody on those phones is signed in
+to NativeTalk, so the phone cannot register itself with us. Instead the app
+sends its token to your backend, and your backend sends it to us with the same
+API key it uses to create SIP devices, for the SIP device that person signs in
+with:
+
+```http
+POST /api/sip/devices/{device_id}/push-token/
+X-API-Key: <your company API key>
+
+{
+  "token": "<the device token, hex for iOS>",
+  "platform": "ios",
+  "bundle_id": "com.yourcompany.yourapp",
+  "environment": "sandbox"
+}
+```
+
+We register the token against that device's own SIP username, so there is no
+extension to send, and your key can only ever reach your own devices. A reply
+with `"registered": true` means the phone will be woken for that device's
+calls. When the person signs out, send the same token to
+`DELETE /api/sip/devices/{device_id}/push-token/`, or their phone keeps ringing
+for whoever signs in to that SIP device next. Both are in
+[SIP Device API](SIP_DEVICE_API.md), sections 7 and 8.
+
+Do not ask us for the provisioning key instead. There is one for the whole
+platform and it is not scoped to a company, so it is not ours to hand out, and
+holding it would make you responsible for every other company on it.
+
+**From the app, if your users sign in with NativeTalk accounts.** Then the app
+posts its own token, and the extension is the one on the signed-in account:
 
 ```http
 POST /push/devices
@@ -298,19 +330,9 @@ Authorization: Bearer <that user's NativeTalk session>
 }
 ```
 
-`extension` can be left out here: we use the extension on the signed-in
-account. A phone can only ever register itself, and only for its own extension.
-
-**If your app does not sign in to NativeTalk**, which is the usual case when
-your users live in your own system, then your backend sends us the token and we
-register it. Talk to us and we will agree the route. Do not ask us for the
-provisioning key: there is one for the whole platform and it is not scoped to a
-tenant, so it is not ours to hand out, and holding it would make you
-responsible for every other company on it.
-
 Two fields matter more than they look:
 
-- `bundleId` must be your app's real bundle ID. It decides which app Apple
+- `bundle_id` (or `bundleId`) must be your app's real bundle ID. It decides which app Apple
   delivers to, and a topic-specific key will refuse anything else.
 - `environment` is `sandbox` for a build signed with a development profile,
   which includes anything run from Xcode, and `production` for TestFlight and
@@ -353,7 +375,7 @@ reinstall, and an old token is a phone that will never ring.
 - [ ] Firebase service account JSON sent, if you want Android wake-ups
 - [ ] Device tokens registered for every handset, with the right `bundleId` and `environment`
 - [ ] `reportNewIncomingCall` called on every path through the push handler
-- [ ] `GET /push/status` shows `signedAs: "tenant"` and a recent `verifiedAt`
+- [ ] We have confirmed your key shows `signedAs: "tenant"` and a recent `verifiedAt`
 - [ ] A real call to a real phone with the app swiped away
 
 ## If a phone still does not ring
@@ -364,10 +386,13 @@ Work down this list. It is in the order faults actually turn up.
    simulator.
 2. **Is the Voice over IP background mode on?** Without it the phone registers
    for VoIP push and silently never gets one.
-3. **Does `GET /push/status` show a device?** No device row means the token
-   never reached us, which is Part 8 and not a push problem at all.
-4. **Does it say `signedAs: "tenant"`?** If it says `platform`, your key is not
-   uploaded and we are signing as ourselves, which Apple will refuse.
+3. **Did registering the token say `"registered": true`?** If the token
+   never reached us, there is nothing to wake. That is Part 8, and not a push
+   problem at all. Check the app sends its token on every launch, and that your
+   backend passes it on for the right SIP device.
+4. **Is your key the one signing?** Ask us, or read `GET /push/status` if your
+   app signs in to NativeTalk. If it says `platform`, your key is not uploaded
+   and we are signing as ourselves, which Apple will refuse.
 5. **Is there an entry for this build's environment?** A sandbox build with only
    a production key uploaded cannot be woken.
 6. **Has the app ever been force quit by iOS?** If your push handler ever
