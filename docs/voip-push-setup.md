@@ -278,16 +278,18 @@ a call that no longer exists, so we would rather it were dropped.
 
 ## Part 8: registering a handset
 
-A push needs somewhere to go. When your app gets a VoIP token from iOS, or an
-FCM token from Firebase, send it to us with the extension that phone answers
-on:
+A push needs somewhere to go. Every handset has to tell us its token and the
+extension it answers on, or there is nothing to send a wake-up to. This is the
+step most often missing when the key is right and the phone still does not ring.
+
+**From the app, with the user signed in.** If the person using your app signs in
+with their NativeTalk account, the app posts its own token:
 
 ```http
-POST /machine/v1/tenants/<your-slug>/devices
-x-machine-key: <your key>
+POST /push/devices
+Authorization: Bearer <that user's NativeTalk session>
 
 {
-  "extension": "1001",
   "token": "<the device token, hex for iOS>",
   "platform": "ios",
   "provider": "apns",
@@ -296,16 +298,48 @@ x-machine-key: <your key>
 }
 ```
 
+`extension` can be left out here: we use the extension on the signed-in
+account. A phone can only ever register itself, and only for its own extension.
+
+**If your app does not sign in to NativeTalk**, which is the usual case when
+your users live in your own system, then your backend sends us the token and we
+register it. Talk to us and we will agree the route. Do not ask us for the
+provisioning key: there is one for the whole platform and it is not scoped to a
+tenant, so it is not ours to hand out, and holding it would make you
+responsible for every other company on it.
+
 Two fields matter more than they look:
 
 - `bundleId` must be your app's real bundle ID. It decides which app Apple
   delivers to, and a topic-specific key will refuse anything else.
-- `environment` is `sandbox` for a build run from Xcode and `production` for
-  TestFlight and the App Store. Get it wrong and we will usually recover, by
-  retrying against the other Apple server, but we cannot recover if the key for
-  that environment was never uploaded.
+- `environment` is `sandbox` for a build signed with a development profile,
+  which includes anything run from Xcode, and `production` for TestFlight and
+  the App Store. Get it wrong and we will usually recover, by retrying against
+  the other Apple server, but we cannot recover if the key for that environment
+  was never uploaded.
 
-Send it again whenever the token changes. iOS issues a new one after a
+`#if DEBUG` is the wrong test for that last one, because a Release build run on
+a device from Xcode is still a development build and still sandbox. Read it off
+the profile the build was actually signed with:
+
+```swift
+/// "sandbox" or "production", as Apple sees this build.
+static func apsEnvironment() -> String {
+  guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+        let data = try? Data(contentsOf: url),
+        let text = String(data: data, encoding: .isoLatin1),
+        let key = text.range(of: "<key>aps-environment</key>"),
+        let close = text.range(of: "</string>", range: key.upperBound..<text.endIndex)
+  else { return "production" }  // the App Store strips the profile
+  let value = text[key.upperBound..<close.lowerBound]
+  return value.contains("development") ? "sandbox" : "production"
+}
+```
+
+An App Store build has no embedded profile at all, which is why the fallback is
+`production`.
+
+Send the token again whenever it changes. iOS issues a new one after a
 reinstall, and an old token is a phone that will never ring.
 
 ## Checklist
@@ -317,7 +351,7 @@ reinstall, and an old token is a phone that will never ring.
 - [ ] Key ID, Team ID, bundle ID and environment noted down
 - [ ] `.p8` sent to us by one-time link, not by chat or email
 - [ ] Firebase service account JSON sent, if you want Android wake-ups
-- [ ] Device tokens posted to `/devices` with the right `bundleId` and `environment`
+- [ ] Device tokens registered for every handset, with the right `bundleId` and `environment`
 - [ ] `reportNewIncomingCall` called on every path through the push handler
 - [ ] `GET /push/status` shows `signedAs: "tenant"` and a recent `verifiedAt`
 - [ ] A real call to a real phone with the app swiped away
