@@ -62,6 +62,9 @@ not send them again unless you replace the key.
 Then [check it](#part-5-checking-it-works), and test a real call with the app
 swiped away.
 
+Steps 4 to 7 do not have to wait for us to install your key. Tokens your
+backend sends before then are kept, and start ringing as soon as the key is in.
+
 The bundle ID in step 2 is the only time we need it. Your backend does not send
 it again with each token, because every token for your app is for the same app,
 and we already have it from the key.
