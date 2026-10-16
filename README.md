@@ -3,8 +3,13 @@
 > Plug-and-play SIP / VoIP calling for React Native.
 >
 > Drop-in `<CallProvider>`, a `useCall()` hook, optional UI screens — and a
-> native Android + iOS layer that handles backgrounding, foreground services,
-> notifications, and CallKit/Push integration so you don't have to.
+> native Android + iOS layer that handles backgrounding, foreground services
+> and notifications so you don't have to.
+>
+> CallKit and VoIP push on iOS are the one part that stays in your app: the call
+> screen has to appear before React Native exists. The SDK gives you the hooks
+> and a template to paste in — see
+> [push notifications](docs/push-notifications.md).
 
 ---
 

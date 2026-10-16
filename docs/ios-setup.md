@@ -1,41 +1,59 @@
 # iOS setup deep-dive
 
 iOS needs more manual work than Android because:
-- Linphone for iOS isn't on CocoaPods (must be added to Xcode by hand).
+- The `linphonesw` pod is bundled in the package rather than published, so your
+  `Podfile` has to point at it (one line, below).
 - CallKit + VoIP push live in the AppDelegate, before React Native exists.
 
 This page is the complete walkthrough.
 
 ## 1. CocoaPods
 
+Add one line to your `Podfile`, inside your app's `target` block:
+
+```ruby
+pod 'linphonesw', :path => '../node_modules/@nativetalkcommunications/react-native-call-sdk/linphonesw-pod'
+```
+
+Then install:
+
 ```bash
 cd ios && pod install
 ```
 
-The SDK's `NativetalkCallSdk.podspec` is autolinked.
+The SDK's own `NativetalkCallSdk.podspec` is autolinked, so it needs no Podfile
+entry. `linphonesw` does, because of what it is: a self-contained pod **bundled
+inside the npm package** at `linphonesw-pod/`, which downloads the Linphone
+xcframeworks (5.4.117) in its `prepare_command` on first install. A `:path` pod
+is not in any spec repo, so CocoaPods cannot resolve the SDK's
+`s.dependency "linphonesw"` without being told where it lives:
 
-## 2. Add the Linphone iOS framework
+```
+[!] Unable to find a specification for `linphonesw` depended upon by `NativetalkCallSdk`
+```
 
-1. Download the latest iOS Linphone SDK from
-   <https://gitlab.linphone.org/BC/public/linphone-sdk/-/releases>
-   (look for the iOS `.zip`, e.g. `linphone-sdk-iphone-5.4.44.zip`).
-2. Unzip. You'll get a `Frameworks/` directory containing several
-   `.xcframework` bundles, including `linphonesw.xcframework`.
-3. In Xcode, drag all the frameworks into your project navigator. Tick
-   **Copy items if needed** and **Add to target: <YourApp>**.
-4. Open your target's *General* tab → **Frameworks, Libraries, and Embedded
-   Content**. For every framework you just added, set **Embed & Sign**.
-5. *Build Settings* → set **Always Embed Swift Standard Libraries** to `YES`.
-6. *Build Settings* → ensure **Build Libraries for Distribution** is `NO`
-   (it must be `NO`, or Swift symbol mangling will break).
+That is the error, and the line above is the whole fix.
 
-Rebuild. The SDK's `import linphonesw` will now resolve.
+**Expo:** the config plugin writes this line for you. Add
+`@nativetalkcommunications/react-native-call-sdk` to `plugins` in `app.json`
+and run `npx expo prebuild`. **Bare React Native: add it yourself.**
 
-> **Why is this manual?**
-> Linphone's iOS SDK is distributed as `.xcframework` binaries and they ship
-> a separate one per major version. A CocoaPods spec would lock every consumer
-> onto a fixed version. By keeping it host-managed, you can upgrade Linphone
-> at your own pace.
+The first `pod install` downloads about 15 xcframeworks and takes a few
+minutes. CocoaPods caches the prepared pod, so it happens once per machine per
+Linphone version.
+
+## 2. One build setting
+
+*Build Settings* → **Build Libraries for Distribution** must be `NO`. If it is
+`YES`, Swift symbol mangling breaks and the app crashes with `_swift_*` symbol
+errors. This is a Linphone constraint, not ours.
+
+Nothing else is needed to make `import linphonesw` resolve. In particular:
+
+> **Do not drag Linphone frameworks into Xcode.** Earlier versions of this page
+> told you to download a Linphone release and add the `.xcframework`s by hand.
+> That was wrong, and it is no longer needed: the pod does it. If you already
+> did it, remove them — two copies of Linphone in one target will not link.
 
 ## 3. Info.plist
 
@@ -59,7 +77,7 @@ In Xcode → *Signing & Capabilities*:
   **Voice over IP**.
 - (Optional, if using VoIP push) **Push Notifications**.
 
-## 5. CallKit + VoIP push (optional but recommended)
+## 5. CallKit + VoIP push (not optional in practice)
 
 Without VoIP push, an incoming call only wakes the app if the SIP socket is
 already open — which means iOS must not have suspended the app. Apple
@@ -75,11 +93,19 @@ The flow:
 4. iOS wakes your app and calls
    `pushRegistry(_:didReceiveIncomingPushWith:…)`. You **must**
    `reportNewIncomingCall(with:update:)` to CallKit **before** the completion
-   handler returns — failure to do so will crash your app on iOS 13+.
+   handler returns. This is the one rule that has a permanent consequence: a
+   VoIP push handled without reporting a call makes iOS force quit the app
+   **and then stop delivering VoIP pushes to that handset until the app is
+   reinstalled**. The phone stops ringing for good, and nothing logs why.
 
 The SDK doesn't bundle this code because the wiring depends on your app's
 launch sequence and notification UX. A copy-paste-ready template is in
 [push-notifications.md](push-notifications.md).
+
+If your app is published from your own Apple Developer account rather than
+Nativetalk's, also read [voip-push-setup.md](voip-push-setup.md). Our server
+cannot wake your app with our key, so there is a key you have to create and
+send us before any push reaches it.
 
 Hooking it back to the SDK is one line:
 
