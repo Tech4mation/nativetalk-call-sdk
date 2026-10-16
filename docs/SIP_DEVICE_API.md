@@ -509,6 +509,124 @@ Content-Type: application/json
 
 ---
 
+### 7. Register a Phone for Call Wake-ups
+
+**Endpoint**: `POST /api/sip/devices/{device_id}/push-token/`
+
+**Description**: Tell us which phone to wake when a call comes in for this SIP
+device.
+
+A phone that is asleep, or an app that has been swiped away, has no open SIP
+connection, so a call cannot reach it directly. We wake the app with a push
+first, and then offer the call. To do that we need the phone's push token. Your
+app gets the token from iOS or Android, sends it to your backend, and your
+backend sends it here, for the SIP device that person signs in with.
+
+Call it every time the app starts, and whenever the operating system issues a
+new token. It is safe to repeat. We keep one phone per SIP device per platform,
+so a new token replaces the old one.
+
+Before an iPhone can be woken, we also need your app's push key. See
+[VoIP Push Setup](voip-push-setup.md).
+
+**Headers**:
+```
+X-API-Key: your-api-key-here
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "token": "4f1c2e8a9b...",
+  "platform": "ios",
+  "bundle_id": "com.yourcompany.yourapp",
+  "environment": "sandbox"
+}
+```
+
+**Field Details**:
+- `token` *(required, string)* — The push token. On iOS this is the PushKit
+  VoIP token as a hex string. On Android it is the Firebase token.
+- `platform` *(optional, string)* — `ios` or `android`. Defaults to `ios`.
+- `provider` *(optional, string)* — `apns` or `fcm`. Worked out from
+  `platform`, so you only need to send one of the two.
+- `bundle_id` *(required for iOS, string)* — Your app's real bundle ID. Apple
+  delivers the push to this app and no other. `bundleId` is also accepted.
+- `environment` *(optional, string)* — `sandbox` for a build signed with a
+  development profile, which includes anything run from Xcode. `production` for
+  TestFlight and the App Store. Defaults to `production`. Ignored on Android.
+
+**Example Response** (200 OK):
+```json
+{
+  "success": true,
+  "data": {
+    "registered": true,
+    "device_id": "593",
+    "platform": "ios",
+    "provider": "apns",
+    "environment": "sandbox"
+  }
+}
+```
+
+If your company's calls do not use push wake-ups, the request still succeeds,
+with `"registered": false` and a message saying so. Nothing needs fixing on
+your side.
+
+**Error Responses**:
+
+*400 Bad Request* — An iPhone token with no bundle ID:
+```json
+{
+  "success": false,
+  "error": "Invalid input",
+  "code": "INVALID_INPUT",
+  "details": {
+    "bundle_id": ["Required for an iPhone: it is the app Apple delivers the push to."]
+  }
+}
+```
+
+*400 Bad Request* — A platform and provider that do not match, such as `ios`
+with `fcm`. An iPhone token sent through Firebase never arrives.
+
+*404 Not Found* — `NO_DEVICE`: the SIP device exists in your account but is not
+on the phone system, so no call will ever be offered to it. Contact us.
+
+---
+
+### 8. Stop Waking a Phone
+
+**Endpoint**: `DELETE /api/sip/devices/{device_id}/push-token/`
+
+**Description**: Stop waking a phone for calls. Call it when the person signs
+out of your app, so their phone does not keep ringing for someone else's calls.
+
+**Headers**:
+```
+X-API-Key: your-api-key-here
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "token": "4f1c2e8a9b..."
+}
+```
+
+If your HTTP client cannot send a body with `DELETE`, send the token in the
+query instead: `DELETE /api/sip/devices/{device_id}/push-token/?token=4f1c2e8a9b...`
+
+**Response**: `204 No Content`. A token we never had also returns `204`, since
+it is already in the state you asked for.
+
+*400 Bad Request* — No token was sent.
+
+---
+
 ## Rate Limiting
 
 The API enforces rate limits per company to prevent abuse:
@@ -560,5 +678,16 @@ When a rate limit is exceeded, the API returns `429 Too Many Requests`. Implemen
 - Wait a minute before retrying
 - Implement exponential backoff in your integration
 
----
+### The app rings while open, but not when asleep or swiped away
 
+**Cause**: The phone was never registered for wake-ups, or Apple refuses our
+push to your app  
+**Fix**:
+- Check the app sends its push token to your backend, and your backend calls
+  `POST /api/sip/devices/{device_id}/push-token/` with it. The response must say
+  `"registered": true`.
+- For iPhones, check the `bundle_id` and `environment` you send are right.
+- Work through [VoIP Push Setup](voip-push-setup.md), which covers the key we
+  need from you before any iPhone can be woken.
+
+---
