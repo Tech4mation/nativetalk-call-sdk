@@ -27,10 +27,25 @@ Set `compileSdkVersion 34` (or higher) in `android/build.gradle`:
 ext { compileSdkVersion = 34 }
 ```
 
+### iOS — `Unable to find a specification for 'linphonesw'`
+
+`pod install` cannot resolve the Linphone pod, because it is bundled in the npm
+package rather than published. Add this to your `Podfile`, inside your app's
+`target` block, and run `pod install` again:
+
+```ruby
+pod 'linphonesw', :path => '../node_modules/@nativetalkcommunications/react-native-call-sdk/linphonesw-pod'
+```
+
+Expo users get it from the config plugin. See
+[ios-setup.md](ios-setup.md) → step 1.
+
 ### iOS — `No such module 'linphonesw'`
 
-You haven't added the Linphone iOS framework to your Xcode project. See
-[ios-setup.md](ios-setup.md) → step 2.
+The pod is not installed. Same cause and same fix as above: the Podfile line,
+then `pod install`. If the line is already there, the first install may have
+failed part-way while downloading the frameworks — `rm -rf ios/Pods` and
+install again.
 
 ### iOS — crashes mentioning `_swift_*` symbols
 

@@ -67,31 +67,42 @@ React Native rules from your `proguard-rules.pro`, add:
 
 ### CocoaPods
 
+The SDK depends on `linphonesw`, the Swift binding for Linphone. That pod is
+**bundled inside the npm package** at `linphonesw-pod/`, and it downloads the
+Linphone xcframeworks (5.4.117) itself on first install. It is not in any public
+spec repo, so CocoaPods cannot find it unless your `Podfile` says where it is.
+Add this line to your `Podfile`, inside your app's `target` block:
+
+```ruby
+pod 'linphonesw', :path => '../node_modules/@nativetalkcommunications/react-native-call-sdk/linphonesw-pod'
+```
+
+Then:
+
 ```bash
 cd ios && pod install
 ```
 
-### Linphone framework — manual step
+The first install downloads about 15 frameworks and takes a few minutes.
+CocoaPods caches them, so later installs are quick.
 
-The iOS Swift binding for Linphone (`linphonesw`) is not on CocoaPods, so it
-must be added to your Xcode project manually. **Once.**
+**Expo users get this line automatically** from the config plugin — add
+`@nativetalkcommunications/react-native-call-sdk` to the `plugins` array in
+`app.json` and run `npx expo prebuild`. Bare React Native apps must add it by
+hand. Without it `pod install` fails with:
 
-1. Download the latest stable Linphone SDK release for iOS from
-   <https://gitlab.linphone.org/BC/public/linphone-sdk/-/releases>
-   (look for the iOS `.zip`).
-2. Unzip and drag `linphone-sdk/apple-darwin/Frameworks/` into your Xcode
-   project. Tick **"Copy items if needed"** and **"Add to target: <YourApp>"**.
-3. In your Xcode target's *General* tab, scroll to **"Frameworks, Libraries,
-   and Embedded Content"** and ensure each `.xcframework` is set to
-   **"Embed & Sign"**.
-4. In *Build Settings* set **"Always Embed Swift Standard Libraries"** to
-   `YES`.
+```
+[!] Unable to find a specification for `linphonesw` depended upon by `NativetalkCallSdk`
+```
 
-That's it — the SDK's Swift bridge can now `import linphonesw`.
+Nothing has to be dragged into Xcode, and there is no Linphone release to
+download by hand. If you have followed an older version of these docs and added
+`.xcframework`s to your project manually, remove them — two copies of Linphone
+in one target will not link.
 
-> ⚠️ **The SDK podspec does not pull Linphone**. Doing so would force every
-> consumer onto a specific framework distribution. By keeping it host-managed,
-> you can swap Linphone versions independently.
+One build setting matters: **Build Libraries for Distribution** must be `NO` on
+your app target, or Swift name mangling breaks and the app crashes on launch
+with `_swift_*` symbol errors.
 
 ### Minimum iOS
 
