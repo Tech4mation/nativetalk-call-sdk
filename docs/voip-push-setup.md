@@ -232,19 +232,8 @@ A `200` looks like this:
 The key itself is never in a reply. Every field and every other reply is in
 [SIP Device API](SIP_DEVICE_API.md), sections 9 to 13.
 
-### Keep the key in one place on your side too
-
-The `.p8` is a signing key. Anyone holding it can send pushes to the apps it
-covers, until it is revoked.
-
-Upload it from the computer you downloaded it to. **Please do not pass it
-around your own team over email, WhatsApp, Slack or a ticket.** Those keep a
-copy, in several places, for years. If a key has already been through a chat
-window, revoke it at Apple and make a new one. That takes two minutes, and it
-is the only way to undo it.
-
-There is no need to send the key to anyone at NativeTalk either. The upload is
-the only way in.
+There is no need to send the key to anyone at NativeTalk. The upload is the
+only way in.
 
 ### What we do with it
 
