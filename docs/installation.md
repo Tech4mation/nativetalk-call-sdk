@@ -115,12 +115,21 @@ In `Info.plist`:
 <string>To make and receive calls</string>
 ```
 
-### Optional: CallKit + VoIP push
+### CallKit + VoIP push
+
+Not optional if calls have to arrive while the app is in the background, which
+on iOS is almost always. Without it the phone suspends the app, the SIP socket
+closes, and the call is offered to nobody.
 
 Wiring CallKit and PushKit is host-app territory because the call UI must
 appear before React Native is ready. See [push-notifications.md](push-notifications.md)
 for a copy-paste-ready `AppDelegate.swift` template that integrates with the
 SDK via `CallEngine.registerVoipToken(hex)`.
+
+If your app is published from your own Apple Developer account rather than
+Nativetalk's, read [voip-push-setup.md](voip-push-setup.md) too. Apple will
+only accept a push for your app from the account that owns it, so there is a
+key you have to create and send us before any of this can work.
 
 ## 4. Verify
 

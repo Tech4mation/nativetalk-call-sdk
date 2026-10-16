@@ -6,9 +6,20 @@ already open. On iOS in particular, that means the app must be foregrounded
 
 This doc covers the recommended setup.
 
+If you are publishing the app under your own Apple or Google account, read
+[VoIP Push Setup](voip-push-setup.md) as well. It covers the key you have to
+create and send us, which is what lets a push reach your app at all.
+
 ## iOS — VoIP push + CallKit
 
-A complete `AppDelegate.swift` you can drop in:
+A complete `AppDelegate.swift` you can drop in.
+
+> ⚠️ **One rule above all others.** Every VoIP push your app receives must
+> reach `reportNewIncomingCall` before it calls `completion()`. If it ever does
+> not, iOS force quits the app and then stops delivering VoIP pushes to that
+> handset until the app is reinstalled. The phone stops ringing permanently and
+> nothing logs why. The template below has no early return between the push
+> arriving and the call being reported, and neither should yours.
 
 ```swift
 import UIKit
@@ -18,6 +29,7 @@ import PushKit
 import CallKit
 import AVFoundation
 import UserNotifications
+import CryptoKit
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate,
@@ -52,17 +64,30 @@ class AppDelegate: UIResponder, UIApplicationDelegate,
   }
 
   private func configureCallKitAndPushKit() {
-    let config = CXProviderConfiguration(localizedName: "YourApp")
-    config.supportsVideo = false
-    config.maximumCallsPerCallGroup = 1
-    config.supportedHandleTypes = [.phoneNumber, .generic]
-    self.callKitProvider = CXProvider(configuration: config)
-    self.callKitProvider?.setDelegate(self, queue: nil)
+    _ = provider
 
     let reg = PKPushRegistry(queue: .main)
     reg.delegate = self
     reg.desiredPushTypes = [.voIP]
     self.voipRegistry = reg
+  }
+
+  /// The CallKit provider, built on first use and never nil.
+  ///
+  /// Deliberately not an optional the push handler has to unwrap. Reporting a
+  /// call is not optional — see the warning below — so a code path that gives
+  /// up because the provider was not ready yet is a path that force quits the
+  /// app and stops the handset receiving VoIP pushes altogether.
+  private var provider: CXProvider {
+    if let existing = callKitProvider { return existing }
+    let config = CXProviderConfiguration(localizedName: "YourApp")
+    config.supportsVideo = false
+    config.maximumCallsPerCallGroup = 1
+    config.supportedHandleTypes = [.phoneNumber, .generic]
+    let made = CXProvider(configuration: config)
+    made.setDelegate(self, queue: nil)
+    callKitProvider = made
+    return made
   }
 
   private func initializeReactNative(launchOptions: [UIApplication.LaunchOptionsKey: Any]?) {
@@ -93,6 +118,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate,
     let token = pushCredentials.token.map { String(format: "%02.2hhx", $0) }.joined()
     UserDefaults.standard.set(token, forKey: "voip_token")
 
+    // Also send this token to the call server, with the extension this phone
+    // answers on, or nothing will ever be pushed to it. See
+    // voip-push-setup.md, "Registering a handset". iOS issues a new token
+    // after a reinstall, so send it every time this fires rather than once.
+
     // Hand the token to the SDK so it can register it with the SIP server.
     NotificationCenter.default.post(
       name: Notification.Name("Linphone.RegisterVoipToken"),
@@ -106,12 +136,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate,
                     for type: PKPushType,
                     completion: @escaping () -> Void) {
 
-    guard type == .voIP, let provider = self.callKitProvider else {
+    guard type == .voIP else {
       completion()
       return
     }
 
-    // Build the CallKit update from your push payload.
+    // Everything below has a fallback, on purpose. There is no early return
+    // between here and reportNewIncomingCall, because iOS treats a VoIP push
+    // handled without reporting a call as a broken app: it force quits, and
+    // then stops delivering VoIP pushes to the handset until the app is
+    // reinstalled. A missing field is a call screen saying "Unknown". A return
+    // is a phone that stops ringing for good.
     let dict = payload.dictionaryPayload
     let callData = dict["call_data"] as? [String: Any]
     let callIdString = (callData?["call_id"] as? String)
@@ -119,7 +154,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate,
     let caller = (callData?["caller"] as? String)
       ?? (dict["caller"] as? String) ?? "Unknown"
 
-    let callUUID = UUID(uuidString: callIdString) ?? UUID()
+    let callUUID = AppDelegate.callUUID(from: callIdString)
     let update = CXCallUpdate()
     update.remoteHandle = CXHandle(type: .phoneNumber, value: caller)
     update.hasVideo = false
@@ -127,11 +162,32 @@ class AppDelegate: UIResponder, UIApplicationDelegate,
 
     // CRITICAL: report to CallKit before this function returns.
     provider.reportNewIncomingCall(with: callUUID, update: update) { error in
+      if let error = error {
+        // The call was still reported, which is what iOS is watching for.
+        // Common causes are Do Not Disturb and a blocked caller, and neither
+        // is yours to fix.
+        NSLog("CallKit would not show the call: \(error.localizedDescription)")
+      }
       if !self.rnInitialized {
         self.initializeReactNative(launchOptions: self.deferredLaunchOptions)
       }
       completion()
     }
+  }
+
+  /// A stable call UUID for a push.
+  ///
+  /// The server sends `call_id` as a UUID, so the first branch is the normal
+  /// one. The fallback hashes instead of inventing a fresh UUID, because the
+  /// same call can be pushed twice — a retry, or a ring group — and two
+  /// different UUIDs for one call means CallKit shows two call screens and the
+  /// one the user answers is not the one the SDK is holding.
+  private static func callUUID(from callId: String) -> UUID {
+    if let parsed = UUID(uuidString: callId) { return parsed }
+    var digest = Array(Insecure.MD5.hash(data: Data(callId.utf8)))
+    digest[6] = (digest[6] & 0x0F) | 0x30  // version 3
+    digest[8] = (digest[8] & 0x3F) | 0x80  // RFC 4122 variant
+    return NSUUID(uuidBytes: digest) as UUID
   }
 
   // MARK: - CallKit
@@ -162,18 +218,28 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
 
 ### Backend payload
 
-Your SIP server / signalling backend should send a VoIP push with at least:
+What the Nativetalk call server sends, as the whole VoIP push payload:
 
 ```json
 {
-  "aps": { "alert": "Incoming call" },
-  "call_id": "uuid-here",
-  "caller": "+1234567890"
+  "call_data": {
+    "call_id": "f2b1c0a4-...",
+    "caller": "+2348012345678",
+    "caller_ref": "optional, only on a masked call",
+    "extension": "1001",
+    "decline_token": "optional",
+    "decline_url": "optional"
+  }
 }
 ```
 
-The keys `call_id` and `caller` are read by the AppDelegate template above.
-Customise to match your backend.
+There is no `aps` dictionary, and there does not need to be: a VoIP push is not
+displayed by the system, so there is nothing for `aps` to describe. The
+template above reads `call_data` first and then the top level, so it also works
+with a backend of your own that sends the two fields flat.
+
+What each field is for is in
+[VoIP Push Setup → what the push contains](voip-push-setup.md#part-7-what-the-push-contains).
 
 ## Android — FCM data messages (optional)
 
@@ -182,25 +248,32 @@ enough on Android. If you want push wake-up anyway (e.g. for Doze-mode
 resilience), use FCM **data messages** (not notification messages) and
 trigger `register()` from the background handler:
 
+The server sends the same fields as the iOS payload, one level up, as a
+data-only message. It does not send SIP credentials, and no push ever should:
+read those from where the app already keeps them.
+
 ```ts
 import messaging from '@react-native-firebase/messaging';
 import { CallEngine } from '@nativetalkcommunications/react-native-call-sdk';
+import { loadStoredSipConfig } from './your-storage';
 
 messaging().setBackgroundMessageHandler(async (remote) => {
-  if (remote.data?.type === 'voip_wake') {
-    CallEngine.startNativeServices();
-    CallEngine.register({
-      username: remote.data.sip_username,
-      password: remote.data.sip_password,
-      domain: remote.data.sip_domain,
-    });
-  }
+  if (!remote.data?.call_id) return;
+
+  // From app storage, not from the push. A handler that fetches credentials
+  // over the network races the call it is trying to answer, and loses often
+  // enough to matter.
+  const sip = await loadStoredSipConfig();
+  if (!sip) return;
+
+  CallEngine.startNativeServices();
+  CallEngine.register(sip);
 });
 ```
 
-> **Don't fetch SIP credentials inside the push handler in production —
-> store them encrypted in app storage and read them here. Network calls in
-> background handlers are slow and unreliable.**
+Android has no equivalent of Apple's rule about reporting the call, so a
+handler that returns early here costs one missed call rather than every future
+one.
 
 ## Testing push end-to-end
 

@@ -21,6 +21,7 @@ nav:
     - iOS Setup: ios-setup.md
   - UI Components: ui-components.md
   - Push Notifications: push-notifications.md
+  - VoIP Push Setup: voip-push-setup.md
   - Permissions: permissions.md
   - Troubleshooting: troubleshooting.md
 markdown_extensions:
