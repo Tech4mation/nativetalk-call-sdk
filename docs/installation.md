@@ -140,7 +140,7 @@ SDK via `CallEngine.registerVoipToken(hex)`.
 If your app is published from your own Apple Developer account rather than
 Nativetalk's, read [voip-push-setup.md](voip-push-setup.md) too. Apple will
 only accept a push for your app from the account that owns it, so there is a
-key you have to create and send us before any of this can work.
+key you have to create and upload before any of this can work.
 
 ## 4. Verify
 

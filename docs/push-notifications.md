@@ -8,7 +8,7 @@ This doc covers the recommended setup.
 
 If you are publishing the app under your own Apple or Google account, read
 [VoIP Push Setup](voip-push-setup.md) as well. It covers the key you have to
-create and send us, which is what lets a push reach your app at all.
+create and upload, which is what lets a push reach your app at all.
 
 ## iOS — VoIP push + CallKit
 

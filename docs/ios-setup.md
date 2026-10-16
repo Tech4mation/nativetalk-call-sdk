@@ -105,7 +105,7 @@ launch sequence and notification UX. A copy-paste-ready template is in
 If your app is published from your own Apple Developer account rather than
 Nativetalk's, also read [voip-push-setup.md](voip-push-setup.md). Our server
 cannot wake your app with our key, so there is a key you have to create and
-send us before any push reaches it.
+upload before any push reaches it.
 
 Hooking it back to the SDK is one line:
 
