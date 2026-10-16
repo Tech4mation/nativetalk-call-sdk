@@ -37,6 +37,7 @@ For Facility Bills CRM integration:
 2. **Configure** — Set your SIP domain and credentials via the [Configuration](configuration.md) guide
 3. **Manage Devices** — Use the [SIP Device API](SIP_DEVICE_API.md) to programmatically create and manage SIP devices
 4. **Implement Dialer** — Follow the [Quickstart](quickstart.md) to integrate calling UI
+5. **Wake phones for calls** — Follow [VoIP Push Setup](voip-push-setup.md) so a phone rings when the app is in the background or swiped away
 
 ## Support
 

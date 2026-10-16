@@ -24,6 +24,48 @@ not accept a push for your app signed by our team, and Firebase will not
 deliver a message to your app from our project. So to ring your handsets, we
 have to send as you, which means you give us a key.
 
+## The whole job, in order
+
+Some of this is done once, by a person on your team. The rest runs in your app
+and your backend, every time someone signs in.
+
+**Once, by a person on your team**
+
+1. Add two capabilities in Xcode ([Part 1](#part-1-your-xcode-project)).
+2. Make an Apple push key, and send it to us with its Key ID, your Team ID,
+   your app's bundle ID and the key's environment
+   ([Parts 2](#part-2-the-apple-push-key) and
+   [3](#part-3-sending-it-to-us)). Sandbox while you integrate, Production
+   before you ship.
+3. For Android wake-ups, send us a Firebase service account
+   ([Part 4](#part-4-android-and-firebase)).
+
+We keep these and use them for every call to every one of your phones. You do
+not send them again unless you replace the key.
+
+**In your app, every time it starts**
+
+4. Get the phone's push token: a VoIP token from PushKit on iOS, or a Firebase
+   token on Android. Send it to your own backend, the same way your app already
+   talks to it.
+5. When a VoIP push arrives, report the call to CallKit before anything else
+   ([Part 6](#part-6-the-one-rule-your-app-must-not-break)). This one has a
+   permanent cost if it goes wrong.
+
+**In your backend, every time it receives a token**
+
+6. Send it to us for that person's SIP device, with your company API key
+   ([Part 8](#part-8-registering-a-handset)). The token, the platform, and for
+   an iPhone which kind of build it is. Nothing else.
+7. When the person signs out, tell us to forget the token.
+
+Then [check it](#part-5-checking-it-works), and test a real call with the app
+swiped away.
+
+The bundle ID in step 2 is the only time we need it. Your backend does not send
+it again with each token, because every token for your app is for the same app,
+and we already have it from the key.
+
 ## What we need from you
 
 | Platform | What | Where it comes from |
@@ -35,7 +77,9 @@ have to send as you, which means you give us a key.
 | iOS | Which environment the key is for | you chose it when you made the key |
 | Android | The service account JSON file | Firebase → Project settings → Service accounts |
 
-Read on for how to get each one, and how to send them to us.
+These are sent once, by a person, when the key is made. Your app and your
+backend never send them. Read on for how to get each one, and how to send them
+to us.
 
 ## Part 1: your Xcode project
 
@@ -297,7 +341,6 @@ X-API-Key: <your company API key>
 {
   "token": "<the device token, hex for iOS>",
   "platform": "ios",
-  "bundle_id": "com.yourcompany.yourapp",
   "environment": "sandbox"
 }
 ```
@@ -324,21 +367,23 @@ Authorization: Bearer <that user's NativeTalk session>
 {
   "token": "<the device token, hex for iOS>",
   "platform": "ios",
-  "provider": "apns",
-  "bundleId": "com.yourcompany.yourapp",
   "environment": "sandbox"
 }
 ```
 
-Two fields matter more than they look:
+What to send with the token:
 
-- `bundle_id` (or `bundleId`) must be your app's real bundle ID. It decides which app Apple
-  delivers to, and a topic-specific key will refuse anything else.
+- `platform` is `ios` or `android`.
 - `environment` is `sandbox` for a build signed with a development profile,
   which includes anything run from Xcode, and `production` for TestFlight and
-  the App Store. Get it wrong and we will usually recover, by retrying against
-  the other Apple server, but we cannot recover if the key for that environment
-  was never uploaded.
+  the App Store. It goes with every token, because it belongs to the build on
+  that phone, and one person's phone can run an Xcode build one day and a
+  TestFlight build the next. Get it wrong and we will usually recover, by
+  retrying against the other Apple server, but we cannot recover if the key for
+  that environment was never sent to us. Android ignores it.
+- Leave out the bundle ID. We push to the app named on the key you gave us.
+  Send `bundle_id` only if that key covers more than one of your apps, and then
+  it must be the real bundle ID of the app on this phone.
 
 `#if DEBUG` is the wrong test for that last one, because a Release build run on
 a device from Xcode is still a development build and still sandbox. Read it off
@@ -373,7 +418,8 @@ reinstall, and an old token is a phone that will never ring.
 - [ ] Key ID, Team ID, bundle ID and environment noted down
 - [ ] `.p8` sent to us by one-time link, not by chat or email
 - [ ] Firebase service account JSON sent, if you want Android wake-ups
-- [ ] Device tokens registered for every handset, with the right `bundleId` and `environment`
+- [ ] Your backend registers each handset's token on every sign-in, with the right `environment`
+- [ ] Your backend removes the token on sign-out
 - [ ] `reportNewIncomingCall` called on every path through the push handler
 - [ ] We have confirmed your key shows `signedAs: "tenant"` and a recent `verifiedAt`
 - [ ] A real call to a real phone with the app swiped away

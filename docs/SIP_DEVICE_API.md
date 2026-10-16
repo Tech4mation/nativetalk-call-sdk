@@ -540,7 +540,6 @@ Content-Type: application/json
 {
   "token": "4f1c2e8a9b...",
   "platform": "ios",
-  "bundle_id": "com.yourcompany.yourapp",
   "environment": "sandbox"
 }
 ```
@@ -551,11 +550,14 @@ Content-Type: application/json
 - `platform` *(optional, string)* — `ios` or `android`. Defaults to `ios`.
 - `provider` *(optional, string)* — `apns` or `fcm`. Worked out from
   `platform`, so you only need to send one of the two.
-- `bundle_id` *(required for iOS, string)* — Your app's real bundle ID. Apple
-  delivers the push to this app and no other. `bundleId` is also accepted.
+- `bundle_id` *(optional, string)* — Leave it out. We push to the app named on
+  the push key you sent us. Send it only if that key covers more than one of
+  your apps, and then it must be the real bundle ID of the app on this phone.
+  `bundleId` is also accepted.
 - `environment` *(optional, string)* — `sandbox` for a build signed with a
   development profile, which includes anything run from Xcode. `production` for
-  TestFlight and the App Store. Defaults to `production`. Ignored on Android.
+  TestFlight and the App Store. Defaults to `production`, so send it for every
+  development build. Ignored on Android.
 
 **Example Response** (200 OK):
 ```json
@@ -577,20 +579,18 @@ your side.
 
 **Error Responses**:
 
-*400 Bad Request* — An iPhone token with no bundle ID:
+*400 Bad Request* — No token, or a platform and provider that do not match,
+such as `ios` with `fcm`. An iPhone token sent through Firebase never arrives.
 ```json
 {
   "success": false,
   "error": "Invalid input",
   "code": "INVALID_INPUT",
   "details": {
-    "bundle_id": ["Required for an iPhone: it is the app Apple delivers the push to."]
+    "token": ["This field is required."]
   }
 }
 ```
-
-*400 Bad Request* — A platform and provider that do not match, such as `ios`
-with `fcm`. An iPhone token sent through Firebase never arrives.
 
 *404 Not Found* — `NO_DEVICE`: the SIP device exists in your account but is not
 on the phone system, so no call will ever be offered to it. Contact us.
@@ -686,7 +686,7 @@ push to your app
 - Check the app sends its push token to your backend, and your backend calls
   `POST /api/sip/devices/{device_id}/push-token/` with it. The response must say
   `"registered": true`.
-- For iPhones, check the `bundle_id` and `environment` you send are right.
+- For iPhones, check the `environment` you send matches the build on the phone.
 - Work through [VoIP Push Setup](voip-push-setup.md), which covers the key we
   need from you before any iPhone can be woken.
 
